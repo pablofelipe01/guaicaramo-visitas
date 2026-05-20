@@ -111,6 +111,37 @@ export async function findPlacaByPlaca(placa: string): Promise<PlacaRecord | nul
   };
 }
 
+/**
+ * Crea una solicitud de visita en la tabla Placas.
+ * autorizado = false hasta que un administrador la apruebe.
+ */
+export async function createPlacaSolicitud(fields: {
+  placa: string;
+  cedula: string;
+  conductor: string;
+  notas?: string;
+}): Promise<string | null> {
+  const body = {
+    records: [{
+      fields: {
+        placa:     fields.placa,
+        cedula:    fields.cedula,
+        conductor: fields.conductor,
+        autorizado: false,
+        ...(fields.notas ? { notas: fields.notas } : {}),
+      },
+    }],
+  };
+  const res = await fetch(apiUrl(getTables().PLACAS), {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.records?.[0]?.id ?? null;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Registros
    ───────────────────────────────────────────────────────── */

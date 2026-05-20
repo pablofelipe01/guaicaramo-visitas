@@ -4,7 +4,8 @@ import { cookies, headers } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import {
   // findPlacaByPlaca,  // TODO: descomentar cuando se active la lógica de autorización por placa
-  createRegistro,
+  // createRegistro,    // TODO: reactivar cuando se retome la lógica de Registros
+  createPlacaSolicitud,
   findAdminByUsuario,
   updateAdminPassword,
   updateRegistroStatus,
@@ -83,41 +84,55 @@ export async function submitVisitorRequest(
      */
 
     const motivoTrim = motivoVisita.trim() || undefined;
+    const nombreTrim  = nombre.trim();
 
-    const nombreTrim = nombre.trim();
-
-    // Registro del conductor principal
-    const pendientes: Promise<string | null>[] = [
-      createRegistro({
-        placa: placaUpper,
-        tipo: 'MANUAL',
-        cedula: cedulaTrim,
-        entry_time: now,
-        approved_by: 'GATEWAY',
-        status: 'PENDIENTE',
-        nombre_visitante: nombreTrim,
-        motivo_visita: motivoTrim,
-        nodo_origen: 'WEB',
+    // ── Solicitud principal (conductor) → tabla Placas ──────────────────
+    const solicitudes: Promise<string | null>[] = [
+      createPlacaSolicitud({
+        placa:     placaUpper,
+        cedula:    cedulaTrim,
+        conductor: nombreTrim,
+        notas:     motivoTrim,
       }),
     ];
 
     // Un registro por cada acompañante, placa compartida
     for (const ac of (acompanantes ?? [])) {
-      pendientes.push(createRegistro({
-        placa: placaUpper,
-        tipo: 'MANUAL',
-        cedula: ac.cedula.trim(),
-        entry_time: now,
-        approved_by: 'GATEWAY',
-        status: 'PENDIENTE',
-        nombre_visitante: ac.nombre.trim(),
-        comment: `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`,
-        motivo_visita: motivoTrim,
-        nodo_origen: 'WEB',
+      solicitudes.push(createPlacaSolicitud({
+        placa:     placaUpper,
+        cedula:    ac.cedula.trim(),
+        conductor: ac.nombre.trim(),
+        notas:     motivoTrim
+          ? `${motivoTrim} — acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`
+          : `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`,
       }));
     }
 
-    await Promise.all(pendientes);
+    await Promise.all(solicitudes);
+
+    /*
+     * ── LÓGICA COMENTADA: creación en tabla Registros ─────────────────────
+     *
+     * const pendientes: Promise<string | null>[] = [
+     *   createRegistro({
+     *     placa: placaUpper, tipo: 'MANUAL', cedula: cedulaTrim,
+     *     entry_time: now, approved_by: 'GATEWAY', status: 'PENDIENTE',
+     *     nombre_visitante: nombreTrim, motivo_visita: motivoTrim, nodo_origen: 'WEB',
+     *   }),
+     * ];
+     * for (const ac of (acompanantes ?? [])) {
+     *   pendientes.push(createRegistro({
+     *     placa: placaUpper, tipo: 'MANUAL', cedula: ac.cedula.trim(),
+     *     entry_time: now, approved_by: 'GATEWAY', status: 'PENDIENTE',
+     *     nombre_visitante: ac.nombre.trim(),
+     *     comment: `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`,
+     *     motivo_visita: motivoTrim, nodo_origen: 'WEB',
+     *   }));
+     * }
+     * await Promise.all(pendientes);
+     *
+     * ─────────────────────────────────────────────────────────────────────
+     */
     return { status: 'PENDIENTE' };
   } catch {
     return { status: 'ERROR', message: 'Error de conexión. Intenta de nuevo.' };

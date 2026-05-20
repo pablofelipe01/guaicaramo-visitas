@@ -838,11 +838,8 @@ a { color: inherit; text-decoration: none; }
 .login {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1fr;
+  place-items: center;
   background: var(--g-cream);
-}
-@media (min-width: 960px) {
-  .login { grid-template-columns: 1.05fr 1fr; }
 }
 
 .login-panel {

@@ -3,7 +3,6 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Wordmark, PalmDecoration } from '@/components/decorations';
 import {
   IconUser,
   IconIdCard,
@@ -46,43 +45,7 @@ export default function LoginPage() {
 
   return (
     <div className="login">
-      {/* ── Left: brand panel ── */}
-      <div className="login-panel">
-        <div className="login-brand">
-          <Wordmark />
-        </div>
-
-        <div>
-          <p className="login-quote">
-            Cada llegada,<br />
-            <em>cada salida,</em><br />
-            bajo control.
-          </p>
-          <p className="login-quote-sub">
-            Sistema de control y autorización de visitas para porterías,
-            plantas, lotes y oficinas de Guaicaramo&nbsp;S.A.S.
-          </p>
-        </div>
-
-        <div className="login-meta">
-          <div>
-            <strong>24/7</strong>
-            Control continuo
-          </div>
-          <div>
-            <strong>100%</strong>
-            Digitalizado
-          </div>
-          <div>
-            <strong>v&nbsp;1.0</strong>
-            Sistema activo
-          </div>
-        </div>
-
-        <PalmDecoration className="login-panel-art" style={{ color: 'var(--g-leaf)' }} />
-      </div>
-
-      {/* ── Right: form panel ── */}
+      {/* ── Form panel ── */}
       <div className="login-form-wrap">
         <div className="login-form">
           <Link href="/" className="login-back">
