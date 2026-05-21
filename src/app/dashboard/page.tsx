@@ -1,8 +1,9 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
-import { getRegistros } from '@/lib/airtable';
-import RegistrosPanel from './RegistrosPanel';
+import { getRegistros, getPlacas, getPersonas } from '@/lib/airtable';
+import RegistrarVisitantePanel from './RegistrarVisitantePanel';
+import DashboardContent from './DashboardContent';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,19 +14,27 @@ export default async function DashboardPage() {
   if (!raw) redirect('/login');
 
   let usuario = 'Administrador';
+  let tipo = 'Invita';
   try {
-    const session = JSON.parse(raw) as { usuario: string };
+    const session = JSON.parse(raw) as { usuario: string; tipo?: string };
     usuario = session.usuario ?? 'Administrador';
+    tipo = session.tipo ?? 'Invita';
   } catch {
     redirect('/login');
   }
 
-  const registros = await getRegistros();
+  const isAutoriza = tipo === 'Autoriza';
 
-  const total      = registros.length;
-  const pendientes = registros.filter((r) => r.status === 'PENDIENTE').length;
-  const aprobados  = registros.filter((r) => r.status === 'APROBADO').length;
-  const negados    = registros.filter((r) => r.status === 'NEGADO').length;
+  // Solo carga datos si el usuario puede autorizarlos
+  const [registros, placas, personas] = isAutoriza
+    ? await Promise.all([getRegistros(), getPlacas(), getPersonas()])
+    : [[], [], []];
+  const stats = {
+    total:      registros.length,
+    pendientes: registros.filter((r) => r.status === 'PENDIENTE').length,
+    aprobados:  registros.filter((r) => r.status === 'APROBADO').length,
+    negados:    registros.filter((r) => r.status === 'NEGADO').length,
+  };
 
   return (
     <div className="db-shell">
@@ -53,28 +62,18 @@ export default async function DashboardPage() {
 
       {/* Main */}
       <main className="db-main">
-        {/* Stats */}
-        <div className="db-stats">
-          <div className="db-stat-card">
-            <span className="db-stat-label">Total registros</span>
-            <span className="db-stat-value">{total}</span>
-          </div>
-          <div className="db-stat-card stat-pendiente">
-            <span className="db-stat-label">Pendientes</span>
-            <span className="db-stat-value">{pendientes}</span>
-          </div>
-          <div className="db-stat-card stat-aprobado">
-            <span className="db-stat-label">Aprobados</span>
-            <span className="db-stat-value">{aprobados}</span>
-          </div>
-          <div className="db-stat-card stat-negado">
-            <span className="db-stat-label">Negados</span>
-            <span className="db-stat-value">{negados}</span>
-          </div>
-        </div>
-
-        {/* Records panel */}
-        <RegistrosPanel registros={registros} usuario={usuario} />
+        {isAutoriza ? (
+          <DashboardContent
+            registros={registros}
+            placas={placas}
+            personas={personas}
+            usuario={usuario}
+            tipo={tipo}
+            stats={stats}
+          />
+        ) : (
+          <RegistrarVisitantePanel />
+        )}
       </main>
     </div>
   );

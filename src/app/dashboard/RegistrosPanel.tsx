@@ -11,6 +11,7 @@ type View = 'tabla' | 'tarjetas';
 interface Props {
   registros: RegistroRecord[];
   usuario: string;
+  tipo: string;
 }
 
 function formatDate(iso: string) {
@@ -61,7 +62,7 @@ const STATUS_FILTER: Record<Tab, string> = {
   todos: '', pendientes: 'PENDIENTE', aprobados: 'APROBADO', negados: 'NEGADO',
 };
 
-export default function RegistrosPanel({ registros }: Props) {
+export default function RegistrosPanel({ registros, tipo }: Props) {
   const router = useRouter();
   const [tab,  setTab]  = useState<Tab>('todos');
   const [view, setView] = useState<View>('tabla');
@@ -203,7 +204,7 @@ export default function RegistrosPanel({ registros }: Props) {
                     <td className="db-td-truncate">{r.motivo_visita || '—'}</td>
                     <td className="db-td-truncate">{r.comment || '—'}</td>
                     <td>
-                      {r.status === 'PENDIENTE' ? (
+                      {r.status === 'PENDIENTE' && tipo === 'Autoriza' ? (
                         <div className="db-actions-cell">
                           <button
                             type="button"
@@ -273,7 +274,7 @@ export default function RegistrosPanel({ registros }: Props) {
                   </div>
                 )}
 
-                {r.status === 'PENDIENTE' && (
+                {r.status === 'PENDIENTE' && tipo === 'Autoriza' && (
                   <div className="db-record-card-actions">
                     <button
                       type="button"

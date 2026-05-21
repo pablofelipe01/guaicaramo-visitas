@@ -6,9 +6,13 @@ import {
   // findPlacaByPlaca,  // TODO: descomentar cuando se active la lógica de autorización por placa
   // createRegistro,    // TODO: reactivar cuando se retome la lógica de Registros
   createPlacaSolicitud,
+  createPersona,
   findAdminByUsuario,
+  findAdminByCedula,
   updateAdminPassword,
   updateRegistroStatus,
+  updatePlacaAutorizado,
+  updatePersonaAutorizado,
 } from '@/lib/airtable';
 import { isAllowed } from '@/lib/rate-limit';
 
@@ -43,6 +47,8 @@ export async function submitVisitorRequest(
   placa: string,
   motivoVisita: string,
   acompanantes?: { cedula: string; nombre: string }[],
+  tipoTransporte?: 'vehiculo' | 'peaton',
+  fechaVencimiento?: string,
 ): Promise<VisitorResult> {
   // Rate limit: máx. 5 solicitudes por IP cada 60 segundos
   const ip = await getClientIp();
@@ -52,7 +58,17 @@ export async function submitVisitorRequest(
 
   const placaUpper = placa.toUpperCase().trim();
   const cedulaTrim = cedula.trim();
-  const now = new Date().toISOString();
+  const esVehiculo = (tipoTransporte ?? 'vehiculo') === 'vehiculo';
+  // Convierte datetime-local (YYYY-MM-DDTHH:mm) a ISO UTC
+  const venceISO = fechaVencimiento
+    ? new Date(fechaVencimiento).toISOString()
+    : undefined;
+  // Quién hace el registro (puede ser undefined si no hay sesión, ej. desde el portal público)
+  const session = await getSession();
+  const registradoPor = session
+    ? `${session.cedula} - ${session.nombre || session.usuario}`.trim().replace(/^-\s*/, '')
+    : undefined;
+  const adminId = session?.id ?? undefined;
 
   try {
     /*
@@ -86,29 +102,67 @@ export async function submitVisitorRequest(
     const motivoTrim = motivoVisita.trim() || undefined;
     const nombreTrim  = nombre.trim();
 
-    // ── Solicitud principal (conductor) → tabla Placas ──────────────────
-    const solicitudes: Promise<string | null>[] = [
-      createPlacaSolicitud({
-        placa:     placaUpper,
-        cedula:    cedulaTrim,
-        conductor: nombreTrim,
-        notas:     motivoTrim,
-      }),
-    ];
-
-    // Un registro por cada acompañante, placa compartida
-    for (const ac of (acompanantes ?? [])) {
-      solicitudes.push(createPlacaSolicitud({
-        placa:     placaUpper,
-        cedula:    ac.cedula.trim(),
-        conductor: ac.nombre.trim(),
-        notas:     motivoTrim
+    if (esVehiculo) {
+      // ── Vehículo: conductor → Placas, acompañantes → Personas ────────────
+      const notaAc = (ac: { cedula: string; nombre: string }) =>
+        motivoTrim
           ? `${motivoTrim} — acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`
-          : `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`,
-      }));
-    }
+          : `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`;
 
-    await Promise.all(solicitudes);
+      const solicitudes: Promise<string | null>[] = [
+        createPlacaSolicitud({
+          placa:          placaUpper,
+          cedula:         cedulaTrim,
+          conductor:      nombreTrim,
+          notas:          motivoTrim,
+          vence:          venceISO,
+          registrado_por: registradoPor,
+          adminId,
+        }),
+        ...(acompanantes ?? []).map(ac =>
+          createPersona({
+            cedula:         ac.cedula.trim(),
+            nombre:         ac.nombre.trim(),
+            cargo:          'Visitante',
+            notas:          notaAc(ac),
+            vence:          venceISO,
+            registrado_por: registradoPor,
+            adminId,
+          }),
+        ),
+      ];
+      await Promise.all(solicitudes);
+    } else {
+      // ── Peatón → tabla Personas ──────────────────────────────────────────
+      const notaAc = (ac: { cedula: string; nombre: string }) =>
+        motivoTrim
+          ? `${motivoTrim} — acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`
+          : `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`;
+
+      const solicitudes: Promise<string | null>[] = [
+        createPersona({
+          cedula:         cedulaTrim,
+          nombre:         nombreTrim,
+          cargo:          'Visitante',
+          notas:          motivoTrim,
+          vence:          venceISO,
+          registrado_por: registradoPor,
+          adminId,
+        }),
+        ...(acompanantes ?? []).map(ac =>
+          createPersona({
+            cedula:         ac.cedula.trim(),
+            nombre:         ac.nombre.trim(),
+            cargo:          'Visitante',
+            notas:          notaAc(ac),
+            vence:          venceISO,
+            registrado_por: registradoPor,
+            adminId,
+          }),
+        ),
+      ];
+      await Promise.all(solicitudes);
+    }
 
     /*
      * ── LÓGICA COMENTADA: creación en tabla Registros ─────────────────────
@@ -134,7 +188,13 @@ export async function submitVisitorRequest(
      * ─────────────────────────────────────────────────────────────────────
      */
     return { status: 'PENDIENTE' };
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[submitVisitorRequest]', msg);
+    // Exponer mensajes de configuración faltante (no contienen datos sensibles)
+    if (msg.startsWith('Falta variable de entorno')) {
+      return { status: 'ERROR', message: `Configuración incompleta: ${msg}` };
+    }
     return { status: 'ERROR', message: 'Error de conexión. Intenta de nuevo.' };
   }
 }
@@ -265,7 +325,7 @@ export async function setAdminPassword(
     const cookieStore = await cookies();
     cookieStore.set(
       'g-session',
-      JSON.stringify({ id: admin.id, usuario: admin.usuario }),
+      JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -281,31 +341,91 @@ export async function setAdminPassword(
   }
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Dashboard — aprobar / rechazar registros
+/* ─────────────────────────────────────────────────────────────   Admin — cédula + PIN
+   ──────────────────────────────────────────────────────── */
+
+export async function adminLoginCedula(
+  cedula: string,
+  pin: string,
+): Promise<AdminLoginResult> {
+  const ip = await getClientIp();
+  if (!isAllowed(`admin-login:${ip}`, 10, 5 * 60_000)) {
+    return { ok: false, message: 'Demasiados intentos. Espera unos minutos e intenta de nuevo.' };
+  }
+
+  if (!/^\d{4,}$/.test(cedula.trim()) || !/^\d{4}$/.test(pin)) {
+    return { ok: false, message: 'Cédula o PIN incorrectos.' };
+  }
+
+  try {
+    const admin = await findAdminByCedula(cedula.trim());
+    if (!admin) {
+      return { ok: false, message: 'Cédula o PIN incorrectos.' };
+    }
+
+    const expectedPin = cedula.trim().slice(-4);
+    if (pin !== expectedPin) {
+      return { ok: false, message: 'Cédula o PIN incorrectos.' };
+    }
+
+    const cookieStore = await cookies();
+    cookieStore.set(
+      'g-session',
+      JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita' }),
+      {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 8,
+      },
+    );
+
+    return { ok: true, usuario: admin.usuario };
+  } catch {
+    return { ok: false, message: 'Error de conexión. Intenta de nuevo.' };
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────   Dashboard — aprobar / rechazar registros
    ───────────────────────────────────────────────────────── */
 
 export type RegistroActionResult =
   | { ok: true }
   | { ok: false; message: string };
 
-async function getSessionUsuario(): Promise<string | null> {
+async function getSession(): Promise<{ id: string; usuario: string; cedula: string; nombre: string; tipo: string } | null> {
   try {
     const cookieStore = await cookies();
     const raw = cookieStore.get('g-session')?.value;
     if (!raw) return null;
-    const { usuario } = JSON.parse(raw) as { usuario: string };
-    return usuario ?? null;
+    const parsed = JSON.parse(raw) as { id?: string; usuario?: string; cedula?: string; nombre?: string; tipo?: string };
+    // Cookie must have been set by our login (has an id field)
+    if (!parsed.id) return null;
+    return {
+      id:      parsed.id,
+      usuario: parsed.usuario || 'Administrador',
+      cedula:  parsed.cedula  || '',
+      nombre:  parsed.nombre  || '',
+      tipo:    parsed.tipo ?? 'Invita',
+    };
   } catch {
     return null;
   }
 }
 
-export async function approveRegistro(id: string): Promise<RegistroActionResult> {
-  const usuario = await getSessionUsuario();
-  if (!usuario) return { ok: false, message: 'No autorizado.' };
+// kept for backward compat (checkAdminUser / adminLogin legacy paths)
+async function getSessionUsuario(): Promise<string | null> {
+  const s = await getSession();
+  return s?.usuario ?? null;
+}
 
-  const ok = await updateRegistroStatus(id, 'APROBADO', { supervisor: usuario });
+export async function approveRegistro(id: string): Promise<RegistroActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'No tienes permiso para aprobar registros.' };
+
+  const ok = await updateRegistroStatus(id, 'APROBADO', { supervisor: session.usuario });
   return ok ? { ok: true } : { ok: false, message: 'Error al actualizar el registro.' };
 }
 
@@ -313,13 +433,54 @@ export async function rejectRegistro(
   id: string,
   comment: string,
 ): Promise<RegistroActionResult> {
-  const usuario = await getSessionUsuario();
-  if (!usuario) return { ok: false, message: 'No autorizado.' };
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'No tienes permiso para rechazar registros.' };
 
   const ok = await updateRegistroStatus(id, 'NEGADO', {
-    supervisor: usuario,
+    supervisor: session.usuario,
     comment: comment.trim() || 'Rechazado por administrador.',
     rejected_time: new Date().toISOString(),
   });
   return ok ? { ok: true } : { ok: false, message: 'Error al actualizar el registro.' };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Placas — autorización
+   ───────────────────────────────────────────────────────── */
+
+export async function authorizePlaca(id: string): Promise<RegistroActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
+  const ok = await updatePlacaAutorizado(id, true);
+  return ok ? { ok: true } : { ok: false, message: 'Error al autorizar la placa.' };
+}
+
+export async function unauthorizePlaca(id: string): Promise<RegistroActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
+  const ok = await updatePlacaAutorizado(id, false);
+  return ok ? { ok: true } : { ok: false, message: 'Error al revocar la placa.' };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Personas — autorización
+   ───────────────────────────────────────────────────────── */
+
+export async function authorizePersona(id: string): Promise<RegistroActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
+  const ok = await updatePersonaAutorizado(id, true);
+  return ok ? { ok: true } : { ok: false, message: 'Error al autorizar la persona.' };
+}
+
+export async function unauthorizePersona(id: string): Promise<RegistroActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
+  const ok = await updatePersonaAutorizado(id, false);
+  return ok ? { ok: true } : { ok: false, message: 'Error al revocar la persona.' };
 }

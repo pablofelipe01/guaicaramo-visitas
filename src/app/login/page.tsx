@@ -14,10 +14,10 @@ import {
   IconCheck,
   IconArrow,
 } from '@/components/icons';
-import { submitVisitorRequest, adminLogin, checkAdminUser, setAdminPassword } from '@/app/actions';
+import { submitVisitorRequest, adminLoginCedula } from '@/app/actions';
 import type { VisitorResult } from '@/app/actions';
 
-type Mode = 'visitor' | 'admin';
+// type Mode = 'visitor' | 'admin';
 
 function IconInfo() {
   return (
@@ -36,13 +36,29 @@ function IconWarn() {
     </svg>
   );
 }
+function IconWalk() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="13" cy="4" r="1.5" />
+      <path d="M10 8.5l-2 5.5 3 1 1 5" />
+      <path d="M10 8.5l2.5-1 2 3-3 2" />
+      <path d="M14.5 10.5l2 5-3-1" />
+    </svg>
+  );
+}
+function IconCalendar() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+    </svg>
+  );
+}
 
 /* ─────────────────────────────────────────────────────────────────
    Root page
    ───────────────────────────────────────────────────────────── */
 export default function LoginPage() {
-  const [mode, setMode] = useState<Mode>('visitor');
-
   return (
     <div className="login">
       {/* ── Form panel ── */}
@@ -56,7 +72,7 @@ export default function LoginPage() {
           </Link>
 
           {/* Mode switcher */}
-          <div className="login-mode-tabs" role="tablist" aria-label="Tipo de acceso">
+          {/* <div className="login-mode-tabs" role="tablist" aria-label="Tipo de acceso">
             <button
               role="tab"
               aria-selected={mode === 'visitor'}
@@ -73,9 +89,9 @@ export default function LoginPage() {
             >
               Acceso administrativo
             </button>
-          </div>
+          </div> */}
 
-          {mode === 'visitor' ? <VisitorForm /> : <AdminForm />}
+          {/* mode === 'visitor' ? <VisitorForm /> : */ <AdminForm />}
         </div>
       </div>
     </div>
@@ -88,7 +104,9 @@ export default function LoginPage() {
 function VisitorForm() {
   const [cedula, setCedula] = useState('');
   const [nombre, setNombre] = useState('');
+  const [tipoTransporte, setTipoTransporte] = useState<'vehiculo' | 'peaton'>('vehiculo');
   const [placa, setPlaca] = useState('');
+  const [fechaVencimiento, setFechaVencimiento] = useState('');
   const [motivoVisita, setMotivoVisita] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [result, setResult] = useState<VisitorResult | null>(null);
@@ -108,13 +126,18 @@ function VisitorForm() {
     } else if (nombre.trim().length < 4) {
       e.nombre = 'Nombre demasiado corto';
     }
-    if (!placa.trim()) {
-      e.placa = 'Ingresa la placa del vehículo';
-    } else if (!/^[A-Za-z0-9]{5,7}$/.test(placa.trim())) {
-      e.placa = 'Formato de placa inválido (ej: ABC123)';
+    if (tipoTransporte === 'vehiculo') {
+      if (!placa.trim()) {
+        e.placa = 'Ingresa la placa del vehículo';
+      } else if (!/^[A-Za-z0-9]{5,7}$/.test(placa.trim())) {
+        e.placa = 'Formato de placa inválido (ej: ABC123)';
+      }
     }
     if (!motivoVisita.trim()) {
       e.motivoVisita = 'Indica el motivo de tu visita';
+    }
+    if (!fechaVencimiento) {
+      e.fechaVencimiento = 'Indica la fecha de vencimiento de la visita';
     }
     acompanantes.forEach((ac, i) => {
       if (!ac.cedula.trim()) {
@@ -157,7 +180,9 @@ function VisitorForm() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
     startTransition(async () => {
-      const res = await submitVisitorRequest(cedula, nombre, placa, motivoVisita, acompanantes);
+      const res = await submitVisitorRequest(
+        cedula, nombre, placa, motivoVisita, acompanantes, tipoTransporte, fechaVencimiento || undefined,
+      );
       setResult(res);
     });
   }
@@ -166,7 +191,9 @@ function VisitorForm() {
     setResult(null);
     setCedula('');
     setNombre('');
+    setTipoTransporte('vehiculo');
     setPlaca('');
+    setFechaVencimiento('');
     setMotivoVisita('');
     setAcompanantes([]);
     setAutorizaDatos(false);
@@ -186,7 +213,11 @@ function VisitorForm() {
         </p>
         <p className="visitor-success-note">
           <IconInfo />
-          Cédula: <strong>{cedula}</strong> · Placa: <strong>{placa.toUpperCase()}</strong>
+          Cédula: <strong>{cedula}</strong>
+          {tipoTransporte === 'vehiculo' && placa && (
+            <> · Placa: <strong>{placa.toUpperCase()}</strong></>
+          )}
+          {tipoTransporte === 'peaton' && <> · <strong>A pie</strong></>}
         </p>
         <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={reset}>
           Nueva solicitud
@@ -272,31 +303,73 @@ function VisitorForm() {
         )}
       </div>
 
-      {/* Placa */}
+      {/* ── Tipo de transporte ── */}
       <div className="field">
-        <label className="field-label" htmlFor="v-placa">Placa del vehículo</label>
-        <div className="field-input-wrap">
-          <input
-            id="v-placa"
-            type="text"
-            placeholder="Ej: ABC123"
-            value={placa}
-            onChange={e => setPlaca(e.target.value.toUpperCase())}
-            autoComplete="off"
-            maxLength={7}
-            aria-describedby={errors.placa ? 'err-placa' : undefined}
-          />
-          <span className="field-icon">
-            <IconCar width={18} height={18} />
-          </span>
+        <label className="field-label">¿Cómo llega el visitante?</label>
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          {([
+            { id: 'vehiculo', label: 'En vehículo', icon: <IconCar width={17} height={17} /> },
+            { id: 'peaton',   label: 'A pie',        icon: <IconWalk /> },
+          ] as const).map(({ id, label, icon }) => (
+            <button
+              key={id}
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                setTipoTransporte(id);
+                if (id === 'peaton') { setPlaca(''); setErrors(prev => { const n = { ...prev }; delete n.placa; return n; }); }
+              }}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                border: `1.5px solid ${tipoTransporte === id ? 'var(--g-green)' : 'var(--g-line)'}`,
+                borderRadius: 'var(--radius)',
+                background: tipoTransporte === id ? 'var(--g-green-soft)' : 'var(--g-paper)',
+                color: tipoTransporte === id ? 'var(--g-green-dark)' : 'var(--g-ink-2)',
+                fontWeight: tipoTransporte === id ? 700 : 500,
+                fontSize: 13.5,
+                cursor: isPending ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 7,
+                transition: 'all .15s',
+              }}
+            >
+              {icon}{label}
+            </button>
+          ))}
         </div>
-        {errors.placa && (
-          <span className="field-error" id="err-placa" role="alert">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-            {errors.placa}
-          </span>
-        )}
       </div>
+
+      {/* Placa — solo si viene en vehículo */}
+      {tipoTransporte === 'vehiculo' && (
+        <div className="field">
+          <label className="field-label" htmlFor="v-placa">Placa del vehículo</label>
+          <div className="field-input-wrap">
+            <input
+              id="v-placa"
+              type="text"
+              placeholder="Ej: ABC123"
+              value={placa}
+              onChange={e => setPlaca(e.target.value.toUpperCase())}
+              autoComplete="off"
+              maxLength={7}
+              disabled={isPending}
+              aria-describedby={errors.placa ? 'err-placa' : undefined}
+            />
+            <span className="field-icon">
+              <IconCar width={18} height={18} />
+            </span>
+          </div>
+          {errors.placa && (
+            <span className="field-error" id="err-placa" role="alert">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              {errors.placa}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Motivo de visita */}
       <div className="field">
@@ -328,6 +401,32 @@ function VisitorForm() {
           <span className="field-error" id="err-motivo" role="alert">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
             {errors.motivoVisita}
+          </span>
+        )}
+      </div>
+
+      {/* Fecha de vencimiento de la visita */}
+      <div className="field">
+        <label className="field-label" htmlFor="v-vence">Fecha y hora de vencimiento de la visita</label>
+        <div className="field-input-wrap">
+          <input
+            id="v-vence"
+            type="datetime-local"
+            value={fechaVencimiento}
+            onChange={e => setFechaVencimiento(e.target.value)}
+            min={new Date().toISOString().slice(0, 16)}
+            disabled={isPending}
+            style={{ paddingRight: 40 }}
+            aria-describedby={errors.fechaVencimiento ? 'err-vence' : undefined}
+          />
+          <span className="field-icon">
+            <IconCalendar />
+          </span>
+        </div>
+        {errors.fechaVencimiento && (
+          <span className="field-error" id="err-vence" role="alert">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+            {errors.fechaVencimiento}
           </span>
         )}
       </div>
@@ -461,49 +560,25 @@ function VisitorForm() {
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   Admin login form — flujo en 2 pasos
-   Paso 1: ingresa usuario → verifica si existe y si tiene contraseña
-   Paso 2a: tiene contraseña → muestra campo contraseña
-   Paso 2b: sin contraseña → muestra formulario de creación
-   ───────────────────────────────────────────────────────────── */
+   Admin form — cédula + PIN
+   ─────────────────────────────────────────────────────────────── */
 function AdminForm() {
   const router = useRouter();
 
-  // Paso: 'user' | 'password' | 'create-password'
-  const [step, setStep] = useState<'user' | 'password' | 'create-password'>('user');
-
-  const [usuario, setUsuario] = useState('');
-  const [contraseña, setContraseña] = useState('');
-  const [newPwd, setNewPwd] = useState('');
-  const [confirmPwd, setConfirmPwd] = useState('');
-  const [showPwd, setShowPwd] = useState(false);
-  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [cedula, setCedula] = useState('');
+  const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  /* ── Paso 1: verificar usuario ── */
-  function handleCheckUser(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!usuario.trim()) { setError('Ingresa tu nombre de usuario.'); return; }
+    if (!cedula.trim()) { setError('Ingresa tu número de cédula.'); return; }
+    if (pin.length !== 4) { setError('El PIN debe tener 4 dígitos.'); return; }
     setError('');
     startTransition(async () => {
-      const res = await checkAdminUser(usuario);
-      if (!res.found) {
-        setError('Usuario no encontrado. Verifica e intenta de nuevo.');
-        return;
-      }
-      setStep(res.hasPassword ? 'password' : 'create-password');
-    });
-  }
-
-  /* ── Paso 2a: iniciar sesión ── */
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (!contraseña) { setError('Ingresa tu contraseña.'); return; }
-    setError('');
-    startTransition(async () => {
-      const res = await adminLogin(usuario, contraseña);
+      const res = await adminLoginCedula(cedula, pin);
       if (res.ok) {
         setDone(true);
         setTimeout(() => router.push('/dashboard'), 800);
@@ -512,145 +587,62 @@ function AdminForm() {
       }
     });
   }
-
-  /* ── Paso 2b: crear contraseña ── */
-  function handleSetPassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (newPwd.length < 4) {
-      setError('La contraseña debe tener al menos 4 caracteres.');
-      return;
-    }
-    if (newPwd !== confirmPwd) {
-      setError('Las contraseñas no coinciden.');
-      return;
-    }
-    setError('');
-    startTransition(async () => {
-      const res = await setAdminPassword(usuario, newPwd);
-      if (res.ok) {
-        setDone(true);
-        setTimeout(() => router.push('/dashboard'), 800);
-      } else {
-        setError(res.message);
-      }
-    });
-  }
-
-  const heading = step === 'create-password' ? 'Crea tu contraseña' : 'Bienvenido';
-  const sub =
-    step === 'create-password'
-      ? 'Es tu primer acceso. Elige una contraseña segura para continuar.'
-      : step === 'password'
-      ? `Ingresa la contraseña de ${usuario}.`
-      : 'Accede con tus credenciales de plataforma.';
 
   return (
-    <form
-      onSubmit={
-        step === 'user'
-          ? handleCheckUser
-          : step === 'password'
-          ? handleLogin
-          : handleSetPassword
-      }
-      noValidate
-    >
+    <form onSubmit={handleSubmit} noValidate>
       <div className="login-form-head">
         <p className="login-form-eyebrow">Panel administrativo</p>
-        <h2 className="login-form-title">{heading}</h2>
-        <p className="login-form-sub">{sub}</p>
+        <h2 className="login-form-title">Bienvenido</h2>
+        <p className="login-form-sub">Accede con tu cédula y PIN personal.</p>
       </div>
 
-      {/* ── Paso 1: usuario ── */}
+      {/* Cédula */}
       <div className="field">
-        <label className="field-label" htmlFor="a-usuario">Usuario</label>
+        <label className="field-label" htmlFor="a-cedula">Cédula</label>
         <div className="field-input-wrap">
           <input
-            id="a-usuario"
+            id="a-cedula"
             type="text"
-            placeholder="tu.usuario"
-            value={usuario}
-            onChange={e => { setUsuario(e.target.value); setError(''); }}
+            inputMode="numeric"
+            pattern="\d*"
+            placeholder="Ej: 1018203040"
+            value={cedula}
+            onChange={e => { setCedula(e.target.value.replace(/\D/g, '')); setError(''); }}
             autoComplete="username"
-            disabled={isPending || done || step !== 'user'}
-            autoFocus={step === 'user'}
+            disabled={isPending || done}
+            autoFocus
           />
-          <span className="field-icon"><IconUser width={18} height={18} /></span>
+          <span className="field-icon"><IconIdCard width={18} height={18} /></span>
         </div>
       </div>
 
-      {/* ── Paso 2a: contraseña ── */}
-      {step === 'password' && (
-        <div className="field">
-          <label className="field-label" htmlFor="a-pwd">Contraseña</label>
-          <div className="field-input-wrap">
-            <input
-              id="a-pwd"
-              type={showPwd ? 'text' : 'password'}
-              placeholder="••••••••"
-              value={contraseña}
-              onChange={e => { setContraseña(e.target.value); setError(''); }}
-              autoComplete="current-password"
-              disabled={isPending || done}
-              autoFocus
-            />
-            <span className="field-icon"><IconLock width={18} height={18} /></span>
-            <button
-              type="button"
-              className="field-pwd-toggle"
-              aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-              onClick={() => setShowPwd(v => !v)}
-            >
-              {showPwd ? <IconEyeOff width={18} height={18} /> : <IconEye width={18} height={18} />}
-            </button>
-          </div>
+      {/* PIN */}
+      <div className="field">
+        <label className="field-label" htmlFor="a-pin">PIN</label>
+        <div className="field-input-wrap">
+          <input
+            id="a-pin"
+            type={showPin ? 'text' : 'password'}
+            inputMode="numeric"
+            pattern="\d*"
+            placeholder="••••"
+            value={pin}
+            onChange={e => { setPin(e.target.value.replace(/\D/g, '').slice(0, 4)); setError(''); }}
+            autoComplete="current-password"
+            maxLength={4}
+            disabled={isPending || done}
+          />
+          <span className="field-icon"><IconLock width={18} height={18} /></span>
+          <button
+            type="button"
+            className="field-pwd-toggle"
+            aria-label={showPin ? 'Ocultar PIN' : 'Mostrar PIN'}
+            onClick={() => setShowPin(v => !v)}
+          >
+            {showPin ? <IconEyeOff width={18} height={18} /> : <IconEye width={18} height={18} />}
+          </button>
         </div>
-      )}
-
-      {/* ── Paso 2b: crear contraseña ── */}
-      {step === 'create-password' && (
-        <>
-          <div className="field">
-            <label className="field-label" htmlFor="a-new-pwd">Nueva contraseña</label>
-            <div className="field-input-wrap">
-              <input
-                id="a-new-pwd"
-                type={showNewPwd ? 'text' : 'password'}
-                placeholder="Mínimo 4 caracteres"
-                value={newPwd}
-                onChange={e => { setNewPwd(e.target.value); setError(''); }}
-                autoComplete="new-password"
-                disabled={isPending || done}
-                autoFocus
-              />
-              <span className="field-icon"><IconLock width={18} height={18} /></span>
-              <button
-                type="button"
-                className="field-pwd-toggle"
-                aria-label={showNewPwd ? 'Ocultar' : 'Mostrar'}
-                onClick={() => setShowNewPwd(v => !v)}
-              >
-                {showNewPwd ? <IconEyeOff width={18} height={18} /> : <IconEye width={18} height={18} />}
-              </button>
-            </div>
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="a-confirm-pwd">Confirmar contraseña</label>
-            <div className="field-input-wrap">
-              <input
-                id="a-confirm-pwd"
-                type={showNewPwd ? 'text' : 'password'}
-                placeholder="Repite la contraseña"
-                value={confirmPwd}
-                onChange={e => { setConfirmPwd(e.target.value); setError(''); }}
-                autoComplete="new-password"
-                disabled={isPending || done}
-              />
-              <span className="field-icon"><IconLock width={18} height={18} /></span>
-            </div>
-          </div>
-        </>
-      )}
+      </div>
 
       {error && (
         <p className="field-error" role="alert" style={{ marginBottom: 16 }}>
@@ -664,9 +656,7 @@ function AdminForm() {
         disabled={isPending || done}
         className={`btn btn-primary btn-block btn-lg login-submit${isPending ? ' loading' : ''}${done ? ' success' : ''}`}
       >
-        <span className="label">
-          {step === 'user' ? 'Continuar' : step === 'create-password' ? 'Crear contraseña e ingresar' : 'Ingresar'}
-        </span>
+        <span className="label">Ingresar</span>
         <IconArrow width={18} height={18} className="arrow" aria-hidden="true" />
         <div className="spinner" role="status" aria-label="Verificando…" />
         <div className="login-success" aria-live="polite">
@@ -675,18 +665,6 @@ function AdminForm() {
           </svg>
         </div>
       </button>
-
-      {step !== 'user' && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-block"
-          style={{ marginTop: 8, fontSize: 13 }}
-          onClick={() => { setStep('user'); setContraseña(''); setNewPwd(''); setConfirmPwd(''); setError(''); }}
-          disabled={isPending || done}
-        >
-          ← Cambiar usuario
-        </button>
-      )}
     </form>
   );
 }
