@@ -170,7 +170,7 @@ export default function RegistrarVisitantePanel() {
   if (result?.status === 'PENDIENTE') {
     return (
       <div style={{ maxWidth: 680, margin: '0 auto' }}>
-        <div className="db-card" style={{ textAlign: 'center', padding: '64px 40px' }}>
+        <div className="db-card db-form-result-pad">
           <div style={{
             width: 64, height: 64, borderRadius: '50%',
             background: 'var(--g-green-soft)', color: 'var(--g-green)',
@@ -200,7 +200,7 @@ export default function RegistrarVisitantePanel() {
   if (result?.status === 'ERROR') {
     return (
       <div style={{ maxWidth: 680, margin: '0 auto' }}>
-        <div className="db-card" style={{ textAlign: 'center', padding: '64px 40px' }}>
+        <div className="db-card db-form-result-pad">
           <h3 style={{ color: 'var(--g-coral)', marginBottom: 8 }}>Error de conexión</h3>
           <p style={{ color: 'var(--g-ink-2)', marginBottom: 24 }}>{result.message}</p>
           <button className="btn btn-ghost" onClick={reset}>Volver al formulario</button>
@@ -215,11 +215,7 @@ export default function RegistrarVisitantePanel() {
       <div className="db-card">
 
         {/* Card header */}
-        <div style={{
-          padding: '28px 32px 24px',
-          borderBottom: '1px solid var(--g-line)',
-          display: 'flex', alignItems: 'center', gap: 14,
-        }}>
+        <div className="db-form-header-pad">
           <div style={{
             width: 44, height: 44, borderRadius: 12,
             background: 'var(--g-green-soft)', color: 'var(--g-green)',
@@ -240,7 +236,7 @@ export default function RegistrarVisitantePanel() {
         </div>
 
         {/* Form body */}
-        <form onSubmit={handleSubmit} noValidate style={{ padding: '8px 32px 32px' }}>
+        <form onSubmit={handleSubmit} noValidate className="db-form-body-pad">
 
           <SectionLabel>Datos personales</SectionLabel>
 

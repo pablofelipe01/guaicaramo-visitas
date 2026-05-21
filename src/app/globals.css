@@ -1656,7 +1656,12 @@ a { color: inherit; text-decoration: none; }
   gap: 4px;
   padding: 16px 24px 0;
   border-bottom: 1px solid var(--g-line);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
 }
+.db-tabs::-webkit-scrollbar { display: none; }
 .db-tab {
   padding: 8px 16px;
   font-size: 13px;
@@ -1669,6 +1674,8 @@ a { color: inherit; text-decoration: none; }
   transition: color .15s, border-color .15s;
   margin-bottom: -1px;
   border-radius: 6px 6px 0 0;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .db-tab:hover { color: var(--g-green-dark); }
 .db-tab.active {
@@ -2001,4 +2008,74 @@ a { color: inherit; text-decoration: none; }
   .db-records-grid { grid-template-columns: 1fr; padding: 16px; }
   .db-view-btn span { display: none; }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Responsive — form card padding helpers
+   ───────────────────────────────────────────────────────────── */
+.db-form-header-pad {
+  padding: 28px 32px 24px;
+  border-bottom: 1px solid var(--g-line);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.db-form-body-pad { padding: 8px 32px 32px; }
+.db-form-result-pad { padding: 64px 40px; text-align: center; }
+
+@media (max-width: 640px) {
+  .db-form-header-pad { padding: 16px; }
+  .db-form-body-pad   { padding: 8px 16px 20px; }
+  .db-form-result-pad { padding: 32px 16px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Responsive — topbar & topbar user
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .db-topbar-user {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .db-topbar-wordmark { font-size: 17px; }
+  .db-topbar { height: 52px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Responsive — stats: single column on very small screens
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 380px) {
+  .db-stats { grid-template-columns: 1fr; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Responsive — login form: compact on small phones
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .login-form-wrap { padding: 28px 16px; }
+  .login-form-title { font-size: 34px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Responsive — landing hero stats: smaller gap on mobile
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .hero-stats { gap: 0; }
+  .hero-stat-value { font-size: clamp(22px, 7vw, 32px); }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Responsive — db-main max-width on small tablets
+   ───────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .db-main { padding: 16px 12px; gap: 16px; }
+  .db-topbar { padding: 0 12px; }
+  .db-card-head { padding: 16px 16px 0; }
+  .db-tabs { padding-left: 16px; padding-right: 16px; }
+  .db-table th,
+  .db-table td { padding: 10px 12px; }
+}
+
 
