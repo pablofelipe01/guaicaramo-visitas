@@ -13,6 +13,8 @@ import {
   updateRegistroStatus,
   updatePlacaAutorizado,
   updatePersonaAutorizado,
+  createFinDeSemanaRecords,
+  type FinDeSemanaPersona,
 } from '@/lib/airtable';
 import { isAllowed } from '@/lib/rate-limit';
 
@@ -271,7 +273,7 @@ export async function adminLogin(
     const cookieStore = await cookies();
     cookieStore.set(
       'g-session',
-      JSON.stringify({ id: admin.id, usuario: admin.usuario }),
+      JSON.stringify({ id: admin.id, usuario: admin.usuario, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -325,7 +327,7 @@ export async function setAdminPassword(
     const cookieStore = await cookies();
     cookieStore.set(
       'g-session',
-      JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre }),
+      JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -371,7 +373,7 @@ export async function adminLoginCedula(
     const cookieStore = await cookies();
     cookieStore.set(
       'g-session',
-      JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita' }),
+      JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -394,12 +396,12 @@ export type RegistroActionResult =
   | { ok: true }
   | { ok: false; message: string };
 
-async function getSession(): Promise<{ id: string; usuario: string; cedula: string; nombre: string; tipo: string } | null> {
+async function getSession(): Promise<{ id: string; usuario: string; cedula: string; nombre: string; tipo: string; areas: string[] } | null> {
   try {
     const cookieStore = await cookies();
     const raw = cookieStore.get('g-session')?.value;
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { id?: string; usuario?: string; cedula?: string; nombre?: string; tipo?: string };
+    const parsed = JSON.parse(raw) as { id?: string; usuario?: string; cedula?: string; nombre?: string; tipo?: string; areas?: string[] };
     // Cookie must have been set by our login (has an id field)
     if (!parsed.id) return null;
     return {
@@ -408,6 +410,7 @@ async function getSession(): Promise<{ id: string; usuario: string; cedula: stri
       cedula:  parsed.cedula  || '',
       nombre:  parsed.nombre  || '',
       tipo:    parsed.tipo ?? 'Invita',
+      areas:   parsed.areas ?? [],
     };
   } catch {
     return null;
@@ -483,4 +486,47 @@ export async function unauthorizePersona(id: string): Promise<RegistroActionResu
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const ok = await updatePersonaAutorizado(id, false);
   return ok ? { ok: true } : { ok: false, message: 'Error al revocar la persona.' };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Programación Semanal (FinDeSemana)
+   ───────────────────────────────────────────────────────── */
+
+export interface ProgramacionResult {
+  ok: boolean;
+  count?: number;
+  message?: string;
+}
+
+export async function submitProgramacionSemanal(
+  personas: Array<{
+    cedula: string;
+    nombre: string;
+    area?: string;
+    fechaInicio?: string; // ISO UTC
+    fechaFin?: string;    // ISO UTC
+    notas?: string;
+  }>,
+  sessionNotes?: string,
+): Promise<ProgramacionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Superadmin') return { ok: false, message: 'Solo el Superadmin puede acceder a esta función.' };
+  if (!personas.length) return { ok: false, message: 'Agrega al menos una persona.' };
+
+  const records: FinDeSemanaPersona[] = personas.map(p => {
+    const resumenParts = [sessionNotes?.trim(), p.notas?.trim()].filter(Boolean);
+    return {
+      cedula: p.cedula.trim(),
+      nombre: p.nombre.trim(),
+      ...(p.area?.trim()      && { area: p.area.trim() }),
+      ...(p.fechaInicio       && { fecha_inicio: p.fechaInicio }),
+      ...(p.fechaFin          && { fecha_fin: p.fechaFin }),
+      ...(resumenParts.length && { resumen: resumenParts.join('\n\n') }),
+    };
+  });
+
+  const result = await createFinDeSemanaRecords(records);
+  if (!result.ok) return { ok: false, message: result.error ?? 'Error al guardar.' };
+  return { ok: true, count: result.ids?.length ?? 0 };
 }

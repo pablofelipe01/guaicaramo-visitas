@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import type { RegistroRecord } from '@/lib/airtable';
 import { approveRegistro, rejectRegistro } from '@/app/actions';
 
-type Tab  = 'todos' | 'pendientes' | 'aprobados' | 'negados';
 type View = 'tabla' | 'tarjetas';
+type CategoriaFilter = '' | 'VEHICULO' | 'PEATON' | 'FIN_DE_SEMANA';
+type EstadoFilter    = '' | 'PENDIENTE' | 'APROBADO' | 'NEGADO' | 'SALIDA_SIN_ENTRADA';
 
 interface Props {
   registros: RegistroRecord[];
@@ -25,6 +26,20 @@ function formatDate(iso: string) {
   }
 }
 
+/** Returns the best display name for the visitor in a registro. */
+function visitorName(r: RegistroRecord): string {
+  if (r.conductores?.length) return r.conductores[0] as string;
+  if (r.nombres_personas?.length) return r.nombres_personas[0] as string;
+  return r.nombre_visitante || '—';
+}
+
+/** Returns the best notes string for a registro. */
+function visitorNotes(r: RegistroRecord): string {
+  if (r.notas_placas?.length) return r.notas_placas[0] as string;
+  if (r.notas_personas?.length) return r.notas_personas[0] as string;
+  return '';
+}
+
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   PENDIENTE:          { label: 'Pendiente',   cls: 'badge badge-pendiente' },
   APROBADO:           { label: 'Aprobado',    cls: 'badge badge-aprobado'  },
@@ -32,9 +47,25 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   SALIDA_SIN_ENTRADA: { label: 'Sin entrada', cls: 'badge badge-negado'    },
 };
 
+const CATEGORIA_META: Record<string, { label: string; icon: string }> = {
+  VEHICULO:      { label: 'Vehículo',     icon: '🚗' },
+  PEATON:        { label: 'Peatón',       icon: '🚶' },
+  FIN_DE_SEMANA: { label: 'Fin de semana', icon: '📅' },
+};
+
 function StatusBadge({ status }: { status: RegistroRecord['status'] }) {
   const { label, cls } = STATUS_META[status] ?? { label: status, cls: 'badge' };
   return <span className={cls}>{label}</span>;
+}
+
+function CategoriaBadge({ categoria }: { categoria?: string }) {
+  if (!categoria) return null;
+  const { label, icon } = CATEGORIA_META[categoria] ?? { label: categoria, icon: '' };
+  return (
+    <span style={{ fontSize: '0.72rem', color: 'var(--g-ink-3)', whiteSpace: 'nowrap' }}>
+      {icon} {label}
+    </span>
+  );
 }
 
 function IconTable() {
@@ -58,37 +89,40 @@ function IconCards() {
   );
 }
 
-const STATUS_FILTER: Record<Tab, string> = {
-  todos: '', pendientes: 'PENDIENTE', aprobados: 'APROBADO', negados: 'NEGADO',
-};
 
 export default function RegistrosPanel({ registros, tipo }: Props) {
   const router = useRouter();
-  const [tab,  setTab]  = useState<Tab>('todos');
-  const [view, setView] = useState<View>('tabla');
+  const [view,            setView]            = useState<View>('tabla');
+  const [filterCategoria, setFilterCategoria] = useState<CategoriaFilter>('');
+  const [filterEstado,    setFilterEstado]    = useState<EstadoFilter>('');
   const [isPending, startTransition] = useTransition();
 
   const [rejectId,      setRejectId]      = useState<string | null>(null);
   const [rejectComment, setRejectComment] = useState('');
   const [actionError,   setActionError]   = useState<string | null>(null);
 
+  // Apply both filters sequentially
+  const byCategoria = filterCategoria === ''
+    ? registros
+    : registros.filter(r => r.categoria === filterCategoria);
+
+  const filtered = filterEstado === ''
+    ? byCategoria
+    : byCategoria.filter(r => r.status === filterEstado);
+
+  // Counts always reflect the categoria filter so estado options stay meaningful
   const counts = {
-    todos:      registros.length,
-    pendientes: registros.filter((r) => r.status === 'PENDIENTE').length,
-    aprobados:  registros.filter((r) => r.status === 'APROBADO').length,
-    negados:    registros.filter((r) => r.status === 'NEGADO').length,
+    total:      byCategoria.length,
+    pendientes: byCategoria.filter(r => r.status === 'PENDIENTE').length,
+    aprobados:  byCategoria.filter(r => r.status === 'APROBADO').length,
+    negados:    byCategoria.filter(r => r.status === 'NEGADO').length,
   };
 
-  const tabs: { id: Tab; label: string }[] = [
-    { id: 'todos',      label: 'Todos'      },
-    { id: 'pendientes', label: 'Pendientes' },
-    { id: 'aprobados',  label: 'Aprobados'  },
-    { id: 'negados',    label: 'Negados'    },
-  ];
-
-  const filtered = tab === 'todos'
-    ? registros
-    : registros.filter((r) => r.status === STATUS_FILTER[tab]);
+  // Counts per categoria (unfiltered)
+  const categoriaCounts: Record<string, number> = {};
+  for (const r of registros) {
+    if (r.categoria) categoriaCounts[r.categoria] = (categoriaCounts[r.categoria] ?? 0) + 1;
+  }
 
   function handleApprove(id: string) {
     setActionError(null);
@@ -153,19 +187,38 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="db-tabs">
-          {tabs.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              className={`db-tab${tab === id ? ' active' : ''}`}
-              onClick={() => setTab(id)}
+        {/* Filters */}
+        <div className="db-filter-bar">
+          <div className="db-filter-group">
+            <span className="db-filter-label">Tipo</span>
+            <select
+              className={`db-filter-select${filterCategoria !== '' ? ' is-active' : ''}`}
+              value={filterCategoria}
+              onChange={e => setFilterCategoria(e.target.value as CategoriaFilter)}
             >
-              {label}
-              <span className="db-tab-count">{counts[id]}</span>
-            </button>
-          ))}
+              <option value="">Todos ({registros.length})</option>
+              <option value="VEHICULO">🚗 Vehículo ({categoriaCounts['VEHICULO'] ?? 0})</option>
+              <option value="PEATON">🚶 Peatón ({categoriaCounts['PEATON'] ?? 0})</option>
+              <option value="FIN_DE_SEMANA">📅 Fin de semana ({categoriaCounts['FIN_DE_SEMANA'] ?? 0})</option>
+            </select>
+          </div>
+          <div className="db-filter-group">
+            <span className="db-filter-label">Estado</span>
+            <select
+              className={`db-filter-select${filterEstado !== '' ? ' is-active' : ''}`}
+              value={filterEstado}
+              onChange={e => setFilterEstado(e.target.value as EstadoFilter)}
+            >
+              <option value="">Todos ({counts.total})</option>
+              <option value="PENDIENTE">Pendiente ({counts.pendientes})</option>
+              <option value="APROBADO">Aprobado ({counts.aprobados})</option>
+              <option value="NEGADO">Negado ({counts.negados})</option>
+              <option value="SALIDA_SIN_ENTRADA">Sin entrada</option>
+            </select>
+          </div>
+          <span className="db-filter-count">
+            {filtered.length} resultado{filtered.length !== 1 ? 's' : ''}
+          </span>
         </div>
 
         {/* Empty state */}
@@ -179,13 +232,14 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
             <table className="db-table">
               <thead>
                 <tr>
-                  <th>Fecha solicitud</th>
-                  <th>Nombre visitante</th>
+                  <th>Fecha entrada</th>
+                  <th>Visitante</th>
                   <th>Cédula</th>
+                  <th>Tipo</th>
                   <th>Placa</th>
+                  <th>Salida</th>
                   <th>Estado</th>
-                  <th>Motivo visita</th>
-                  <th>Comentario</th>
+                  <th>Motivo / Notas</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -193,16 +247,19 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
                 {filtered.map((r) => (
                   <tr key={r.id}>
                     <td className="db-td-date">{formatDate(r.entry_time)}</td>
-                    <td className="db-td-name">{r.nombre_visitante || '—'}</td>
+                    <td className="db-td-name">{visitorName(r)}</td>
                     <td>{r.cedula || '—'}</td>
+                    <td><CategoriaBadge categoria={r.categoria} /></td>
                     <td>
                       {r.placa
                         ? <span className="db-placa">{r.placa}</span>
                         : <span className="db-td-muted">—</span>}
                     </td>
+                    <td className="db-td-date">{r.exit_time ? formatDate(r.exit_time) : <span className="db-td-muted">—</span>}</td>
                     <td><StatusBadge status={r.status} /></td>
-                    <td className="db-td-truncate">{r.motivo_visita || '—'}</td>
-                    <td className="db-td-truncate">{r.comment || '—'}</td>
+                    <td className="db-td-truncate">
+                      {r.motivo_visita || visitorNotes(r) || '—'}
+                    </td>
                     <td>
                       {r.status === 'PENDIENTE' && tipo === 'Autoriza' ? (
                         <div className="db-actions-cell">
@@ -244,7 +301,7 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
                 </div>
 
                 <div className="db-record-card-name">
-                  {r.nombre_visitante || 'Sin nombre'}
+                  {visitorName(r)}
                 </div>
 
                 <div className="db-record-card-meta">
@@ -253,17 +310,34 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
                     <span className="db-record-field-value">{r.cedula || '—'}</span>
                   </div>
                   <div className="db-record-field">
-                    <span className="db-record-field-label">Placa</span>
-                    {r.placa
-                      ? <span className="db-placa db-placa--sm">{r.placa}</span>
-                      : <span className="db-record-field-value">—</span>}
+                    <span className="db-record-field-label">Tipo</span>
+                    <CategoriaBadge categoria={r.categoria} />
                   </div>
+                  {r.placa && (
+                    <div className="db-record-field">
+                      <span className="db-record-field-label">Placa</span>
+                      <span className="db-placa db-placa--sm">{r.placa}</span>
+                    </div>
+                  )}
+                  {r.exit_time && (
+                    <div className="db-record-field">
+                      <span className="db-record-field-label">Salida</span>
+                      <span className="db-record-field-value">{formatDate(r.exit_time)}</span>
+                    </div>
+                  )}
                 </div>
 
-                {r.motivo_visita && (
+                {(r.motivo_visita || visitorNotes(r)) && (
                   <div className="db-record-card-section">
-                    <span className="db-record-field-label">Motivo visita</span>
-                    <p className="db-record-card-text">{r.motivo_visita}</p>
+                    <span className="db-record-field-label">Motivo / Notas</span>
+                    <p className="db-record-card-text">{r.motivo_visita || visitorNotes(r)}</p>
+                  </div>
+                )}
+
+                {r.acompanantes && (
+                  <div className="db-record-card-section">
+                    <span className="db-record-field-label">Acompañantes</span>
+                    <p className="db-record-card-text">{r.acompanantes}</p>
                   </div>
                 )}
 

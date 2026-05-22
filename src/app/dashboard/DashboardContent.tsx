@@ -6,8 +6,9 @@ import RegistrosPanel from './RegistrosPanel';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import PlacasPanel from './PlacasPanel';
 import PersonasPanel from './PersonasPanel';
+import ProgramacionSemanalPanel from './ProgramacionSemanalPanel';
 
-type Tab = 'registros' | 'placas' | 'personas' | 'registrar';
+type Tab = 'registros' | 'placas' | 'personas' | 'registrar' | 'programacion';
 
 interface Props {
   registros: RegistroRecord[];
@@ -56,6 +57,15 @@ export default function DashboardContent({ registros, placas, personas, usuario,
         >
           Registrar visitante
         </button>
+        {tipo === 'Superadmin' && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'programacion' ? ' active' : ''}`}
+            onClick={() => setTab('programacion')}
+          >
+            Programación semanal
+          </button>
+        )}
       </div>
 
       {tab === 'registros' && (
@@ -124,6 +134,7 @@ export default function DashboardContent({ registros, placas, personas, usuario,
       )}
 
       {tab === 'registrar' && <RegistrarVisitantePanel />}
+      {tab === 'programacion' && tipo === 'Superadmin' && <ProgramacionSemanalPanel />}
     </>
   );
 }

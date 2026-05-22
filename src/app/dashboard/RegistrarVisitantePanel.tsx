@@ -232,7 +232,21 @@ export default function RegistrarVisitantePanel() {
               Registrar visitante
             </h2>
           </div>
-
+          <button
+            type="button"
+            onClick={fillTest}
+            style={{
+              flexShrink: 0, fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
+              textTransform: 'uppercase', padding: '5px 10px', borderRadius: 8,
+              border: '1.5px dashed rgba(122,157,74,.45)',
+              background: 'transparent', color: 'var(--g-ink-3)',
+              cursor: 'pointer', transition: 'all .15s',
+            }}
+            onMouseEnter={e => { const b = e.currentTarget; b.style.borderColor = 'var(--g-green)'; b.style.background = 'var(--g-green-soft)'; b.style.color = 'var(--g-green-dark)'; }}
+            onMouseLeave={e => { const b = e.currentTarget; b.style.borderColor = 'rgba(122,157,74,.45)'; b.style.background = 'transparent'; b.style.color = 'var(--g-ink-3)'; }}
+          >
+            Test
+          </button>
         </div>
 
         {/* Form body */}

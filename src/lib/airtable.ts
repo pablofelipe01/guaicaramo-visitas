@@ -6,12 +6,13 @@
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 
-function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS'): string {
+function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' | 'FINDE_SEMANA'): string {
   const env: Record<string, string | undefined> = {
     ADMINISTRADORES: process.env.AIRTABLE_TABLE_ADMINISTRADORES,
     PLACAS:          process.env.AIRTABLE_TABLE_PLACAS,
     REGISTROS:       process.env.AIRTABLE_TABLE_REGISTROS,
     PERSONAS:        process.env.AIRTABLE_TABLE_PERSONAS,
+    FINDE_SEMANA:    process.env.AIRTABLE_TABLE_FINDE_SEMANA,
   };
   const val = env[name];
   if (!val) throw new Error(`Falta variable de entorno AIRTABLE_TABLE_${name}`);
@@ -44,6 +45,7 @@ export interface PlacaRecord {
   autorizado: boolean;
   vence?: string;   // ISO date "YYYY-MM-DD"
   notas?: string;
+  adminIds?: string[];  // linked Administradores record IDs
 }
 
 export interface RegistroCreateFields {
@@ -80,6 +82,7 @@ export interface PersonaRecord {
   vence?: string;
   cargo?: string;
   notas?: string;
+  adminIds?: string[];  // linked Administradores record IDs
 }
 
 export interface AdminRecord {
@@ -88,7 +91,8 @@ export interface AdminRecord {
   cedula: string;
   nombre: string;
   contraseña: string;
-  tipo?: 'Invita' | 'Autoriza';
+  tipo?: 'Invita' | 'Autoriza' | 'Superadmin';
+  areas?: string[];
 }
 
 export interface RegistroRecord {
@@ -106,6 +110,15 @@ export interface RegistroRecord {
   nodo_origen?: string;
   rejected_time?: string;
   nombre_visitante?: string;
+  // New fields from Registros table
+  categoria?: 'VEHICULO' | 'PEATON' | 'FIN_DE_SEMANA';
+  acompanantes?: string;
+  conductores?: string[];        // lookup: conductor (from Placas)
+  notas_placas?: string[];       // lookup: notas (from Placas)
+  nombres_personas?: string[];   // lookup: nombre (from Personas)
+  notas_personas?: string[];     // lookup: notas (from Personas)
+  placaIds?: string[];           // linked Placas record IDs
+  personaIds?: string[];         // linked Personas record IDs
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -245,6 +258,7 @@ export async function findAdminByUsuario(usuario: string): Promise<AdminRecord |
     nombre: r.fields.nombre ?? '',
     contraseña: r.fields['contraseña'] ?? '',
     tipo: r.fields.tipo ?? undefined,
+    areas: r.fields.areas ?? [],
   };
 }
 
@@ -269,6 +283,7 @@ export async function findAdminByCedula(cedula: string): Promise<AdminRecord | n
     nombre: r.fields.nombre ?? '',
     contraseña: r.fields['contraseña'] ?? '',
     tipo: r.fields.tipo ?? undefined,
+    areas: r.fields.areas ?? [],
   };
 }
 
@@ -318,6 +333,14 @@ export async function getRegistros(): Promise<RegistroRecord[]> {
     nodo_origen: r.fields.nodo_origen,
     rejected_time: r.fields.rejected_time,
     nombre_visitante: r.fields.nombre_visitante,
+    categoria: r.fields.categoria,
+    acompanantes: r.fields.acompanantes,
+    conductores: r.fields['conductor (from Placas)'] ?? [],
+    notas_placas: r.fields['notas (from Placas)'] ?? [],
+    nombres_personas: r.fields['nombre (from Personas)'] ?? [],
+    notas_personas: r.fields['notas (from Personas)'] ?? [],
+    placaIds: r.fields['Placas'] ?? [],
+    personaIds: r.fields['Personas'] ?? [],
   }));
 }
 
@@ -366,6 +389,7 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
     autorizado: r.fields.autorizado === true,
     vence:      r.fields.vence,
     notas:      r.fields.notas,
+    adminIds:   r.fields.Administradores ?? [],
   }));
 }
 
@@ -405,6 +429,7 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
     vence:      r.fields.vence,
     cargo:      r.fields.cargo,
     notas:      r.fields.notas,
+    adminIds:   r.fields.Administradores ?? [],
   }));
 }
 
@@ -416,4 +441,80 @@ export async function updatePersonaAutorizado(id: string, autorizado: boolean): 
     body: JSON.stringify({ fields: { autorizado } }),
   });
   return res.ok;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Administradores — lista ligera para filtrado por área
+   ───────────────────────────────────────────────────────── */
+
+export interface AdminListRecord {
+  id: string;
+  areas: string[];
+}
+
+/** Devuelve todos los administradores con sus áreas asignadas. */
+export async function getAdmins(): Promise<AdminListRecord[]> {
+  const params = new URLSearchParams({
+    maxRecords: '200',
+    'fields[]': 'areas',
+  });
+  const res = await fetch(
+    `${apiUrl(getTable('ADMINISTRADORES'))}?${params.toString()}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.records ?? []).map((r: any): AdminListRecord => ({
+    id: r.id,
+    areas: r.fields.areas ?? [],
+  }));
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FinDeSemana
+   ───────────────────────────────────────────────────────── */
+
+export interface FinDeSemanaPersona {
+  cedula: string;
+  nombre: string;
+  area?: string;
+  fecha_inicio?: string; // ISO UTC
+  fecha_fin?: string;    // ISO UTC
+  resumen?: string;
+}
+
+export async function createFinDeSemanaRecords(
+  records: FinDeSemanaPersona[],
+): Promise<{ ok: boolean; ids?: string[]; error?: string }> {
+  const ids: string[] = [];
+  // Airtable allows max 10 records per request
+  for (let i = 0; i < records.length; i += 10) {
+    const batch = records.slice(i, i + 10);
+    const body = {
+      records: batch.map(p => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fields: Record<string, any> = { cedula: p.cedula, nombre: p.nombre };
+        if (p.area)         fields.area         = p.area;
+        if (p.fecha_inicio) fields.fecha_inicio = p.fecha_inicio;
+        if (p.fecha_fin)    fields.fecha_fin    = p.fecha_fin;
+        if (p.resumen)      fields.resumen      = p.resumen;
+        return { fields };
+      }),
+    };
+    const res = await fetch(apiUrl(getTable('FINDE_SEMANA')), {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { ok: false, error: err.error?.message ?? `Error HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ids.push(...(data.records ?? []).map((r: any) => r.id as string));
+  }
+  return { ok: true, ids };
 }

@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
-import { getRegistros, getPlacas, getPersonas } from '@/lib/airtable';
+import { getRegistros, getPlacas, getPersonas, getAdmins, type RegistroRecord, type PlacaRecord, type PersonaRecord } from '@/lib/airtable';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import DashboardContent from './DashboardContent';
 
@@ -15,20 +15,51 @@ export default async function DashboardPage() {
 
   let usuario = 'Administrador';
   let tipo = 'Invita';
+  let areas: string[] = [];
   try {
-    const session = JSON.parse(raw) as { usuario: string; tipo?: string };
+    const session = JSON.parse(raw) as { usuario: string; tipo?: string; areas?: string[] };
     usuario = session.usuario ?? 'Administrador';
     tipo = session.tipo ?? 'Invita';
+    areas = session.areas ?? [];
   } catch {
     redirect('/login');
   }
 
-  const isAutoriza = tipo === 'Autoriza';
+  const isAutoriza   = tipo === 'Autoriza';
+  const isSuperadmin = tipo === 'Superadmin';
+  const canViewDashboard = isAutoriza || isSuperadmin;
 
-  // Solo carga datos si el usuario puede autorizarlos
-  const [registros, placas, personas] = isAutoriza
-    ? await Promise.all([getRegistros(), getPlacas(), getPersonas()])
-    : [[], [], []];
+  // Solo carga datos si el usuario puede ver el dashboard
+  let placas: PlacaRecord[] = [], personas: PersonaRecord[] = [], registros: RegistroRecord[] = [];
+  if (canViewDashboard) {
+    [registros, placas, personas] = await Promise.all([getRegistros(), getPlacas(), getPersonas()]);
+
+    // Superadmin ve todo sin filtro de área
+    // Filtrar por área: solo para Autoriza
+    if (isAutoriza && areas.length > 0) {
+      const allAdmins = await getAdmins();
+      const matchingAdminIds = new Set(
+        allAdmins
+          .filter(a => a.areas.some(area => areas.includes(area)))
+          .map(a => a.id),
+      );
+      placas = placas.filter(p =>
+        !p.adminIds?.length || p.adminIds.some(id => matchingAdminIds.has(id)),
+      );
+      personas = personas.filter(p =>
+        !p.adminIds?.length || p.adminIds.some(id => matchingAdminIds.has(id)),
+      );
+      // Filtrar registros: solo los vinculados a placas o personas del área
+      const filteredPlacaIds = new Set(placas.map(p => p.id));
+      const filteredPersonaIds = new Set(personas.map(p => p.id));
+      registros = registros.filter(r => {
+        if (!r.placaIds?.length && !r.personaIds?.length) return true;
+        if (r.placaIds?.some(id => filteredPlacaIds.has(id))) return true;
+        if (r.personaIds?.some(id => filteredPersonaIds.has(id))) return true;
+        return false;
+      });
+    }
+  }
   const stats = {
     total:      registros.length,
     pendientes: registros.filter((r) => r.status === 'PENDIENTE').length,
@@ -62,7 +93,7 @@ export default async function DashboardPage() {
 
       {/* Main */}
       <main className="db-main">
-        {isAutoriza ? (
+        {canViewDashboard ? (
           <DashboardContent
             registros={registros}
             placas={placas}

@@ -1123,6 +1123,7 @@ a { color: inherit; text-decoration: none; }
 .login-submit.loading .arrow { display: none; }
 .login-submit .label { transition: opacity .2s; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes db-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
 
 .login-success {
   position: absolute;
@@ -1682,6 +1683,63 @@ a { color: inherit; text-decoration: none; }
   color: var(--g-green-dark);
   border-bottom-color: var(--g-leaf);
   background: var(--g-green-soft);
+}
+
+/* Filter bar */
+.db-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--g-line);
+  flex-wrap: wrap;
+}
+.db-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--g-green-soft);
+  border-radius: 10px;
+  padding: 3px;
+}
+.db-filter-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  color: var(--g-ink-3);
+  padding: 0 8px 0 6px;
+  text-transform: uppercase;
+  user-select: none;
+}
+.db-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234E5B31' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E") no-repeat right 8px center;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 28px 5px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--g-ink-3);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  min-width: 0;
+}
+.db-filter-select:focus { outline: none; }
+.db-filter-select:hover { color: var(--g-green-dark); }
+.db-filter-select.is-active {
+  background-color: var(--g-paper);
+  color: var(--g-green-dark);
+  box-shadow: 0 1px 3px rgba(78,91,49,.12);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%234E5B31' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.db-filter-count {
+  font-size: 11.5px;
+  color: var(--g-ink-3);
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 /* Table */
