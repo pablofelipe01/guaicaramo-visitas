@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
-import { getRegistros, getPlacas, getPersonas, getAdmins, type RegistroRecord, type PlacaRecord, type PersonaRecord } from '@/lib/airtable';
+import { getRegistros, getPlacas, getPersonas, getAdmins, getItems, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord } from '@/lib/airtable';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import DashboardContent from './DashboardContent';
 
@@ -30,9 +30,17 @@ export default async function DashboardPage() {
   const canViewDashboard = isAutoriza || isSuperadmin;
 
   // Solo carga datos si el usuario puede ver el dashboard
-  let placas: PlacaRecord[] = [], personas: PersonaRecord[] = [], registros: RegistroRecord[] = [];
+  let placas: PlacaRecord[] = [], personas: PersonaRecord[] = [], registros: RegistroRecord[] = [], items: ItemRecord[] = [];
   if (canViewDashboard) {
     [registros, placas, personas] = await Promise.all([getRegistros(), getPlacas(), getPersonas()]);
+
+    if (isSuperadmin) {
+      try {
+        items = await getItems();
+      } catch {
+        // AIRTABLE_TABLE_ITEMS not configured yet — panel will show empty list
+      }
+    }
 
     // Superadmin ve todo sin filtro de área
     // Filtrar por área: solo para Autoriza
@@ -101,6 +109,7 @@ export default async function DashboardPage() {
             usuario={usuario}
             tipo={tipo}
             stats={stats}
+            items={items}
           />
         ) : (
           <RegistrarVisitantePanel />

@@ -15,6 +15,8 @@ import {
   updatePersonaAutorizado,
   createFinDeSemanaRecords,
   type FinDeSemanaPersona,
+  createItem,
+  type ItemCreateFields,
 } from '@/lib/airtable';
 import { isAllowed } from '@/lib/rate-limit';
 
@@ -456,7 +458,8 @@ export async function authorizePlaca(id: string): Promise<RegistroActionResult> 
   const session = await getSession();
   if (!session) return { ok: false, message: 'No autorizado.' };
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
-  const ok = await updatePlacaAutorizado(id, true);
+  const adminName = `${session.cedula} - ${session.nombre || session.usuario}`.replace(/^-\s*/, '').trim();
+  const ok = await updatePlacaAutorizado(id, true, adminName);
   return ok ? { ok: true } : { ok: false, message: 'Error al autorizar la placa.' };
 }
 
@@ -476,7 +479,8 @@ export async function authorizePersona(id: string): Promise<RegistroActionResult
   const session = await getSession();
   if (!session) return { ok: false, message: 'No autorizado.' };
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
-  const ok = await updatePersonaAutorizado(id, true);
+  const adminName = `${session.cedula} - ${session.nombre || session.usuario}`.replace(/^-\s*/, '').trim();
+  const ok = await updatePersonaAutorizado(id, true, adminName);
   return ok ? { ok: true } : { ok: false, message: 'Error al autorizar la persona.' };
 }
 
@@ -529,4 +533,29 @@ export async function submitProgramacionSemanal(
   const result = await createFinDeSemanaRecords(records);
   if (!result.ok) return { ok: false, message: result.error ?? 'Error al guardar.' };
   return { ok: true, count: result.ids?.length ?? 0 };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Items — Órdenes de salida
+   ───────────────────────────────────────────────────────── */
+
+export interface OrdenSalidaResult {
+  ok: boolean;
+  id?: string;
+  message?: string;
+}
+
+export async function submitOrdenSalida(
+  fields: ItemCreateFields,
+): Promise<OrdenSalidaResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Superadmin') return { ok: false, message: 'Solo el Superadmin puede registrar órdenes de salida.' };
+
+  if (!fields.nombre.trim()) return { ok: false, message: 'El nombre es obligatorio.' };
+  if (!fields.cedula.trim()) return { ok: false, message: 'La cédula es obligatoria.' };
+
+  const result = await createItem(fields);
+  if (!result.ok) return { ok: false, message: result.error ?? 'Error al guardar.' };
+  return { ok: true, id: result.id };
 }

@@ -1,14 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import type { RegistroRecord, PlacaRecord, PersonaRecord } from '@/lib/airtable';
+import type { RegistroRecord, PlacaRecord, PersonaRecord, ItemRecord } from '@/lib/airtable';
 import RegistrosPanel from './RegistrosPanel';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import PlacasPanel from './PlacasPanel';
 import PersonasPanel from './PersonasPanel';
 import ProgramacionSemanalPanel from './ProgramacionSemanalPanel';
+import OrdenesSalidaPanel from './OrdenesSalidaPanel';
 
-type Tab = 'registros' | 'placas' | 'personas' | 'registrar' | 'programacion';
+type Tab = 'registros' | 'placas' | 'personas' | 'registrar' | 'programacion' | 'ordenes';
 
 interface Props {
   registros: RegistroRecord[];
@@ -17,9 +18,10 @@ interface Props {
   usuario: string;
   tipo: string;
   stats: { total: number; pendientes: number; aprobados: number; negados: number };
+  items: ItemRecord[];
 }
 
-export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats }: Props) {
+export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items }: Props) {
   const [tab, setTab] = useState<Tab>('registros');
 
   return (
@@ -64,6 +66,15 @@ export default function DashboardContent({ registros, placas, personas, usuario,
             onClick={() => setTab('programacion')}
           >
             Programación semanal
+          </button>
+        )}
+        {tipo === 'Superadmin' && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'ordenes' ? ' active' : ''}`}
+            onClick={() => setTab('ordenes')}
+          >
+            Órdenes de salida
           </button>
         )}
       </div>
@@ -135,6 +146,7 @@ export default function DashboardContent({ registros, placas, personas, usuario,
 
       {tab === 'registrar' && <RegistrarVisitantePanel />}
       {tab === 'programacion' && tipo === 'Superadmin' && <ProgramacionSemanalPanel />}
+      {tab === 'ordenes' && tipo === 'Superadmin' && <OrdenesSalidaPanel items={items} />}
     </>
   );
 }

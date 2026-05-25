@@ -143,22 +143,6 @@ export default function RegistrarVisitantePanel() {
     });
   }
 
-  function fillTest() {
-    setCedula('1006774686');
-    setNombre('Carlos Méndez');
-    setTipoTransporte('vehiculo');
-    setPlaca('MFH06D');
-    setMotivoVisita('Auditoría de sistemas internos');
-    setFechaVencimiento(`${new Date().toISOString().slice(0, 10)}T16:00`);
-    setAcompanantes([
-      { cedula: '1018203040', nombre: 'Laura Gómez' },
-      { cedula: '80456789',   nombre: 'Jorge Patiño' },
-      { cedula: '52987654',   nombre: 'Sandra Torres' },
-    ]);
-    setErrors({});
-    setResult(null);
-  }
-
   function reset() {
     setResult(null);
     setCedula(''); setNombre(''); setPlaca('');
@@ -232,21 +216,7 @@ export default function RegistrarVisitantePanel() {
               Registrar visitante
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={fillTest}
-            style={{
-              flexShrink: 0, fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
-              textTransform: 'uppercase', padding: '5px 10px', borderRadius: 8,
-              border: '1.5px dashed rgba(122,157,74,.45)',
-              background: 'transparent', color: 'var(--g-ink-3)',
-              cursor: 'pointer', transition: 'all .15s',
-            }}
-            onMouseEnter={e => { const b = e.currentTarget; b.style.borderColor = 'var(--g-green)'; b.style.background = 'var(--g-green-soft)'; b.style.color = 'var(--g-green-dark)'; }}
-            onMouseLeave={e => { const b = e.currentTarget; b.style.borderColor = 'rgba(122,157,74,.45)'; b.style.background = 'transparent'; b.style.color = 'var(--g-ink-3)'; }}
-          >
-            Test
-          </button>
+
         </div>
 
         {/* Form body */}

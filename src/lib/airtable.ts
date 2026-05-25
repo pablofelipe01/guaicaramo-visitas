@@ -6,13 +6,14 @@
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 
-function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' | 'FINDE_SEMANA'): string {
+function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' | 'FINDE_SEMANA' | 'ITEMS'): string {
   const env: Record<string, string | undefined> = {
     ADMINISTRADORES: process.env.AIRTABLE_TABLE_ADMINISTRADORES,
     PLACAS:          process.env.AIRTABLE_TABLE_PLACAS,
     REGISTROS:       process.env.AIRTABLE_TABLE_REGISTROS,
     PERSONAS:        process.env.AIRTABLE_TABLE_PERSONAS,
     FINDE_SEMANA:    process.env.AIRTABLE_TABLE_FINDE_SEMANA,
+    ITEMS:           process.env.AIRTABLE_TABLE_ITEMS,
   };
   const val = env[name];
   if (!val) throw new Error(`Falta variable de entorno AIRTABLE_TABLE_${name}`);
@@ -393,12 +394,25 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
   }));
 }
 
-/** Marca o desmarca `autorizado` en un registro de Placas. */
-export async function updatePlacaAutorizado(id: string, autorizado: boolean): Promise<boolean> {
+/** Marca o desmarca `autorizado` en un registro de Placas.
+ *  Si se pasa `autorizadoPor`, escribe el nombre en el campo `autoriza_visita`.
+ */
+export async function updatePlacaAutorizado(
+  id: string,
+  autorizado: boolean,
+  autorizadoPor?: string,
+): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fields: Record<string, any> = { autorizado };
+  if (autorizado && autorizadoPor) {
+    fields.autoriza_visita = autorizadoPor;
+  } else if (!autorizado) {
+    fields.autoriza_visita = '';
+  }
   const res = await fetch(`${apiUrl(getTable('PLACAS'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
-    body: JSON.stringify({ fields: { autorizado } }),
+    body: JSON.stringify({ fields }),
   });
   return res.ok;
 }
@@ -433,12 +447,25 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
   }));
 }
 
-/** Marca o desmarca `autorizado` en un registro de Personas. */
-export async function updatePersonaAutorizado(id: string, autorizado: boolean): Promise<boolean> {
+/** Marca o desmarca `autorizado` en un registro de Personas.
+ *  Si se pasa `autorizadoPor`, escribe el nombre en el campo `responsable_visita`.
+ */
+export async function updatePersonaAutorizado(
+  id: string,
+  autorizado: boolean,
+  autorizadoPor?: string,
+): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fields: Record<string, any> = { autorizado };
+  if (autorizado && autorizadoPor) {
+    fields.responsable_visita = autorizadoPor;
+  } else if (!autorizado) {
+    fields.responsable_visita = '';
+  }
   const res = await fetch(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
-    body: JSON.stringify({ fields: { autorizado } }),
+    body: JSON.stringify({ fields }),
   });
   return res.ok;
 }
@@ -517,4 +544,101 @@ export async function createFinDeSemanaRecords(
     ids.push(...(data.records ?? []).map((r: any) => r.id as string));
   }
   return { ok: true, ids };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Items (Órdenes de salida)
+   ───────────────────────────────────────────────────────── */
+
+export interface ItemRecord {
+  id: string;
+  numero?: string;
+  nombre: string;
+  cedula: string;
+  concepto?: string;
+  destino?: string;
+  autorizado_por?: string;
+  area?: string;
+  autorizado: boolean;
+  usado: boolean;
+  fecha_autorizacion?: string; // ISO UTC
+  fecha_salida?: string;       // ISO UTC
+  nodo_origen?: string;
+  notas?: string;
+}
+
+export interface ItemCreateFields {
+  numero?: string;
+  nombre: string;
+  cedula: string;
+  concepto?: string;
+  destino?: string;
+  autorizado_por?: string;
+  area?: string;
+  autorizado?: boolean;
+  fecha_salida?: string; // ISO UTC
+  notas?: string;
+}
+
+/** Devuelve hasta 100 órdenes de salida, más recientes primero. */
+export async function getItems(): Promise<ItemRecord[]> {
+  const params = new URLSearchParams({
+    maxRecords: '100',
+    'sort[0][field]': 'fecha_salida',
+    'sort[0][direction]': 'desc',
+  });
+  const res = await fetch(
+    `${apiUrl(getTable('ITEMS'))}?${params.toString()}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.records ?? []).map((r: any): ItemRecord => ({
+    id: r.id,
+    numero:              r.fields.numero,
+    nombre:              r.fields.nombre              ?? '',
+    cedula:              r.fields.cedula              ?? '',
+    concepto:            r.fields.concepto,
+    destino:             r.fields.destino,
+    autorizado_por:      r.fields.autorizado_por,
+    area:                r.fields.area,
+    autorizado:          r.fields.autorizado          === true,
+    usado:               r.fields.usado               === true,
+    fecha_autorizacion:  r.fields.fecha_autorizacion,
+    fecha_salida:        r.fields.fecha_salida,
+    nodo_origen:         r.fields.nodo_origen,
+    notas:               r.fields.notas,
+  }));
+}
+
+/** Crea una nueva orden de salida en la tabla Items. */
+export async function createItem(
+  fields: ItemCreateFields,
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const f: Record<string, any> = {
+    nombre: fields.nombre,
+    cedula: fields.cedula,
+  };
+  if (fields.numero)        f.numero        = fields.numero;
+  if (fields.concepto)      f.concepto      = fields.concepto;
+  if (fields.destino)       f.destino       = fields.destino;
+  if (fields.autorizado_por)f.autorizado_por= fields.autorizado_por;
+  if (fields.area)          f.area          = fields.area;
+  if (fields.autorizado)    f.autorizado    = fields.autorizado;
+  if (fields.fecha_salida)  f.fecha_salida  = fields.fecha_salida;
+  if (fields.notas)         f.notas         = fields.notas;
+
+  const res = await fetch(apiUrl(getTable('ITEMS')), {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ records: [{ fields: f }] }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    return { ok: false, error: err.error?.message ?? `Error HTTP ${res.status}` };
+  }
+  const data = await res.json();
+  return { ok: true, id: data.records?.[0]?.id };
 }
