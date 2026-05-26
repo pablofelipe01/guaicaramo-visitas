@@ -21,7 +21,11 @@ function formatDate(iso?: string) {
 
 function isExpired(vence?: string) {
   if (!vence) return false;
-  return new Date(vence) < new Date();
+  // Date-only strings (YYYY-MM-DD) are parsed as UTC midnight by JS, causing
+  // false positives in negative-UTC-offset timezones. Treat them as end-of-day
+  // local time so a record dated "today" is never shown as expired.
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(vence) ? `${vence}T23:59:59` : vence;
+  return new Date(normalized) < new Date();
 }
 
 type Filter = 'todos' | 'pendientes' | 'autorizados' | 'vencidos';
@@ -105,10 +109,10 @@ export default function PersonasPanel({ personas, tipo }: Props) {
                 const expired = isExpired(p.vence);
                 return (
                   <tr key={p.id}>
-                    <td style={{ fontWeight: 600 }}>{p.nombre || '—'}</td>
-                    <td style={{ color: 'var(--g-ink-2)', fontSize: 13 }}>{p.cedula || '—'}</td>
-                    <td style={{ fontSize: 13, color: 'var(--g-ink-2)' }}>{p.cargo || '—'}</td>
-                    <td>
+                    <td data-label="Nombre" style={{ fontWeight: 600 }}>{p.nombre || '—'}</td>
+                    <td data-label="Cédula" style={{ color: 'var(--g-ink-2)', fontSize: 13 }}>{p.cedula || '—'}</td>
+                    <td data-label="Cargo" style={{ fontSize: 13, color: 'var(--g-ink-2)' }}>{p.cargo || '—'}</td>
+                    <td data-label="Estado">
                       {expired ? (
                         <span className="badge badge-negado">Vencido</span>
                       ) : p.autorizado ? (
@@ -117,16 +121,16 @@ export default function PersonasPanel({ personas, tipo }: Props) {
                         <span className="badge badge-pendiente">Pendiente</span>
                       )}
                     </td>
-                    <td style={{ fontSize: 13, color: expired ? 'var(--g-coral)' : 'var(--g-ink-2)' }}>
+                    <td data-label="Vence" style={{ fontSize: 13, color: expired ? 'var(--g-coral)' : 'var(--g-ink-2)' }}>
                       {formatDate(p.vence)}
                     </td>
-                    <td style={{ fontSize: 12, color: 'var(--g-ink-3)', maxWidth: 200 }}>
+                    <td data-label="Notas" style={{ fontSize: 12, color: 'var(--g-ink-3)', maxWidth: 200 }}>
                       <span title={p.notas} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {p.notas || '—'}
                       </span>
                     </td>
                     {canAuthorize && (
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td data-label="Acción" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {p.autorizado ? (
                           <button
                             onClick={() => handleAuthorize(p.id, false)}
