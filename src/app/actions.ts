@@ -63,9 +63,11 @@ export async function submitVisitorRequest(
   const placaUpper = placa.toUpperCase().trim();
   const cedulaTrim = cedula.trim();
   const esVehiculo = (tipoTransporte ?? 'vehiculo') === 'vehiculo';
-  // Convierte datetime-local (YYYY-MM-DDTHH:mm) a ISO UTC
+  // Convierte datetime-local (YYYY-MM-DDTHH:mm, hora Colombia UTC-5) a ISO UTC
+  // Se añade el offset explícito -05:00 para que el servidor (UTC) no lo
+  // malinterprete como hora UTC.
   const venceISO = fechaVencimiento
-    ? new Date(fechaVencimiento).toISOString()
+    ? new Date(`${fechaVencimiento}-05:00`).toISOString()
     : undefined;
   // Quién hace el registro (puede ser undefined si no hay sesión, ej. desde el portal público)
   const session = await getSession();

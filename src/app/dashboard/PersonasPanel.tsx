@@ -14,8 +14,15 @@ function formatDate(iso?: string) {
   if (!iso) return '—';
   try {
     const d = new Date(iso);
-    const p = (n: number) => String(n).padStart(2, '0');
-    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    if (isNaN(d.getTime())) return iso;
+    // Always display in Colombia timezone (UTC-5, no DST) regardless of server TZ
+    const parts = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(d);
+    const g = (t: string) => parts.find(p => p.type === t)?.value ?? '00';
+    return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}`;
   } catch { return iso; }
 }
 
@@ -35,6 +42,15 @@ export default function PersonasPanel({ personas, tipo }: Props) {
   const [filter, setFilter] = useState<Filter>('todos');
   const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+
+  function toggleNote(id: string) {
+    setExpandedNotes(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const canAuthorize = tipo === 'Autoriza';
 
@@ -124,8 +140,19 @@ export default function PersonasPanel({ personas, tipo }: Props) {
                     <td data-label="Vence" style={{ fontSize: 13, color: expired ? 'var(--g-coral)' : 'var(--g-ink-2)' }}>
                       {formatDate(p.vence)}
                     </td>
-                    <td data-label="Notas" style={{ fontSize: 12, color: 'var(--g-ink-3)', maxWidth: 200 }}>
-                      <span title={p.notas} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    <td data-label="Notas" style={{ fontSize: 12, color: 'var(--g-ink-3)', maxWidth: expandedNotes.has(p.id) ? undefined : 200 }}>
+                      <span
+                        title={expandedNotes.has(p.id) ? undefined : p.notas}
+                        onClick={p.notas ? () => toggleNote(p.id) : undefined}
+                        style={{
+                          display: expandedNotes.has(p.id) ? 'block' : '-webkit-box',
+                          WebkitLineClamp: expandedNotes.has(p.id) ? undefined : 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: expandedNotes.has(p.id) ? 'visible' : 'hidden',
+                          cursor: p.notas ? 'pointer' : 'default',
+                          textDecoration: p.notas && !expandedNotes.has(p.id) ? 'underline dotted' : 'none',
+                        }}
+                      >
                         {p.notas || '—'}
                       </span>
                     </td>
