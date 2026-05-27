@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PlacaRecord, PersonaRecord } from '@/lib/airtable';
-import { authorizePlaca, unauthorizePlaca, authorizePersona, unauthorizePersona } from '@/app/actions';
+import { authorizePlaca, unauthorizePlaca, authorizePersona, unauthorizePersona, denyPlaca, denyPersona } from '@/app/actions';
 
 interface Props {
   placas: PlacaRecord[];
@@ -20,6 +20,7 @@ type Visitante = {
   cargo?: string;
   cedula?: string;
   autorizado: boolean;
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
   vence?: string;
   responsable_visita?: string;
   notas?: string;
@@ -81,11 +82,12 @@ function isExpired(vence?: string) {
   return new Date(normalized) < new Date();
 }
 
-type Filter = 'todos' | 'pendientes' | 'autorizados' | 'vencidos';
+type Filter = 'todos' | 'pendientes' | 'autorizados' | 'rechazados' | 'vencidos';
 
 export default function VisitantesPanel({ placas, personas, tipo }: Props) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>('todos');
+  const [search, setSearch] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
@@ -108,6 +110,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       conductor: p.conductor,
       cedula: p.cedula,
       autorizado: p.autorizado,
+      estado: p.estado,
       vence: p.vence,
       responsable_visita: p.responsable_visita,
       notas: p.notas,
@@ -120,6 +123,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       cargo: p.cargo,
       cedula: p.cedula,
       autorizado: p.autorizado,
+      estado: p.estado,
       vence: p.vence,
       responsable_visita: p.responsable_visita,
       notas: p.notas,
@@ -131,17 +135,29 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
 
   const counts = {
     todos:       visitantes.length,
-    pendientes:  visitantes.filter(v => !v.autorizado).length,
+    pendientes:  visitantes.filter(v => !v.autorizado && v.estado !== 'RECHAZADO').length,
     autorizados: visitantes.filter(v => v.autorizado && !isExpired(v.vence)).length,
+    rechazados:  visitantes.filter(v => v.estado === 'RECHAZADO').length,
     vencidos:    visitantes.filter(v => isExpired(v.vence)).length,
   };
 
-  const filtered = visitantes.filter(v => {
-    if (filter === 'pendientes')  return !v.autorizado;
+  const byTab = visitantes.filter(v => {
+    if (filter === 'pendientes')  return !v.autorizado && v.estado !== 'RECHAZADO';
     if (filter === 'autorizados') return v.autorizado && !isExpired(v.vence);
+    if (filter === 'rechazados')  return v.estado === 'RECHAZADO';
     if (filter === 'vencidos')    return isExpired(v.vence);
     return true;
   });
+
+  const term = search.toLowerCase().trim();
+  const filtered = term
+    ? byTab.filter(v =>
+        (v.placa ?? '').toLowerCase().includes(term) ||
+        (v.nombre ?? '').toLowerCase().includes(term) ||
+        (v.conductor ?? '').toLowerCase().includes(term) ||
+        (v.cedula ?? '').toLowerCase().includes(term)
+      )
+    : byTab;
 
   function handleAuthorize(id: string, visitType: 'vehiculo' | 'persona', authorize: boolean) {
     setActionError(null);
@@ -154,10 +170,20 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
     });
   }
 
+  function handleDeny(id: string, visitType: 'vehiculo' | 'persona') {
+    setActionError(null);
+    startTransition(async () => {
+      const res = visitType === 'vehiculo' ? await denyPlaca(id) : await denyPersona(id);
+      if (!res.ok) { setActionError(res.message ?? 'Error'); return; }
+      router.refresh();
+    });
+  }
+
   const FILTERS: { key: Filter; label: string; count: number }[] = [
     { key: 'todos',       label: 'Todos',       count: counts.todos       },
     { key: 'pendientes',  label: 'Pendientes',  count: counts.pendientes  },
     { key: 'autorizados', label: 'Autorizados', count: counts.autorizados },
+    { key: 'rechazados',  label: 'Rechazados',  count: counts.rechazados  },
     { key: 'vencidos',    label: 'Vencidos',    count: counts.vencidos    },
   ];
 
@@ -172,6 +198,26 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
             <span className="db-tab-count">{f.count}</span>
           </button>
         ))}
+      </div>
+
+      <div className="db-search-bar">
+        <div className="db-search-wrap">
+          <span className="db-search-icon">
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="9" cy="9" r="7"/><path d="M16 16l-3.5-3.5"/>
+            </svg>
+          </span>
+          <input
+            className="db-search-input"
+            type="text"
+            placeholder="Buscar por placa, nombre, conductor o cédula…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <button className="db-search-clear" onClick={() => setSearch('')} aria-label="Limpiar búsqueda">×</button>
+          )}
+        </div>
       </div>
 
       {actionError && (
@@ -259,6 +305,8 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                     <td data-label="Estado">
                       {expired ? (
                         <span className="badge badge-negado">Vencido</span>
+                      ) : v.estado === 'RECHAZADO' ? (
+                        <span className="badge badge-negado">Rechazado</span>
                       ) : v.autorizado ? (
                         <span className="badge badge-aprobado">Autorizado</span>
                       ) : (
@@ -298,14 +346,33 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                           >
                             Revocar
                           </button>
-                        ) : (
+                        ) : v.estado === 'RECHAZADO' ? (
                           <button
-                            onClick={() => handleAuthorize(v.id, v.tipo, true)}
+                            onClick={() => handleAuthorize(v.id, v.tipo, false)}
                             disabled={isPending}
-                            className="btn btn-primary btn-sm"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--g-ink-3)', borderColor: 'rgba(0,0,0,.15)' }}
                           >
-                            Autorizar
+                            Restaurar
                           </button>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            <button
+                              onClick={() => handleAuthorize(v.id, v.tipo, true)}
+                              disabled={isPending}
+                              className="btn btn-primary btn-sm"
+                            >
+                              Autorizar
+                            </button>
+                            <button
+                              onClick={() => handleDeny(v.id, v.tipo)}
+                              disabled={isPending}
+                              className="btn btn-ghost btn-sm"
+                              style={{ color: 'var(--g-coral)', borderColor: 'rgba(220,53,69,.3)' }}
+                            >
+                              Denegar
+                            </button>
+                          </div>
                         )}
                       </td>
                     )}

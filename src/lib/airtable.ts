@@ -44,6 +44,7 @@ export interface PlacaRecord {
   cedula: string;
   conductor: string;
   autorizado: boolean;
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
   vence?: string;   // ISO date "YYYY-MM-DD"
   notas?: string;
   adminIds?: string[];  // linked Administradores record IDs
@@ -82,6 +83,7 @@ export interface PersonaRecord {
   cedula: string;
   nombre: string;
   autorizado: boolean;
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
   vence?: string;
   cargo?: string;
   notas?: string;
@@ -149,6 +151,7 @@ export async function findPlacaByPlaca(placa: string): Promise<PlacaRecord | nul
     cedula: r.fields.cedula ?? '',
     conductor: r.fields.conductor ?? '',
     autorizado: r.fields.autorizado === true,
+    estado: r.fields.estado ?? undefined,
     vence: r.fields.vence,
     notas: r.fields.notas,
     acompañanteIds: r.fields.Acompañantes ?? [],
@@ -175,6 +178,7 @@ export async function createPlacaSolicitud(fields: {
         cedula:    fields.cedula,
         conductor: fields.conductor,
         autorizado: false,
+        estado: 'PENDIENTE',
         ...(fields.notas           ? { notas:              fields.notas              } : {}),
         ...(fields.vence           ? { vence:              fields.vence              } : {}),
         ...(fields.registrado_por  ? { responsable_visita: fields.registrado_por     } : {}),
@@ -203,6 +207,7 @@ export async function createPersona(fields: PersonaCreateFields): Promise<string
         cedula:  fields.cedula,
         nombre:  fields.nombre,
         autorizado: false,
+        estado: 'PENDIENTE',
         ...(fields.cargo           ? { cargo:              fields.cargo              } : {}),
         ...(fields.notas           ? { notas:              fields.notas              } : {}),
         ...(fields.vence           ? { vence:              fields.vence              } : {}),
@@ -393,6 +398,7 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
     cedula:     r.fields.cedula     ?? '',
     conductor:  r.fields.conductor  ?? '',
     autorizado: r.fields.autorizado === true,
+    estado:     r.fields.estado     ?? undefined,
     vence:      r.fields.vence,
     notas:      r.fields.notas,
     adminIds:   r.fields.Administradores ?? [],
@@ -403,14 +409,17 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
 
 /** Marca o desmarca `autorizado` en un registro de Placas.
  *  Si se pasa `autorizadoPor`, escribe el nombre en el campo `autoriza_visita`.
+ *  `estadoOverride` permite forzar RECHAZADO; por defecto se deriva de `autorizado`.
  */
 export async function updatePlacaAutorizado(
   id: string,
   autorizado: boolean,
   autorizadoPor?: string,
+  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO',
 ): Promise<boolean> {
+  const estado = estadoOverride ?? (autorizado ? 'AUTORIZADO' : 'PENDIENTE');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fields: Record<string, any> = { autorizado };
+  const fields: Record<string, any> = { autorizado, estado };
   if (autorizado && autorizadoPor) {
     fields.autoriza_visita = autorizadoPor;
   } else if (!autorizado) {
@@ -479,6 +488,7 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
     cedula:          r.fields.cedula          ?? '',
     nombre:          r.fields.nombre          ?? '',
     autorizado:      r.fields.autorizado      === true,
+    estado:          r.fields.estado          ?? undefined,
     vence:           r.fields.vence,
     cargo:           r.fields.cargo,
     notas:           r.fields.notas,
@@ -490,14 +500,17 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
 
 /** Marca o desmarca `autorizado` en un registro de Personas.
  *  Si se pasa `autorizadoPor`, escribe el nombre en el campo `responsable_visita`.
+ *  `estadoOverride` permite forzar RECHAZADO; por defecto se deriva de `autorizado`.
  */
 export async function updatePersonaAutorizado(
   id: string,
   autorizado: boolean,
   autorizadoPor?: string,
+  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO',
 ): Promise<boolean> {
+  const estado = estadoOverride ?? (autorizado ? 'AUTORIZADO' : 'PENDIENTE');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fields: Record<string, any> = { autorizado };
+  const fields: Record<string, any> = { autorizado, estado };
   if (autorizado && autorizadoPor) {
     fields.responsable_visita = autorizadoPor;
   } else if (!autorizado) {

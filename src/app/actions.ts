@@ -512,6 +512,14 @@ export async function unauthorizePlaca(id: string): Promise<RegistroActionResult
   return ok ? { ok: true } : { ok: false, message: 'Error al revocar la placa.' };
 }
 
+export async function denyPlaca(id: string): Promise<RegistroActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
+  const ok = await updatePlacaAutorizado(id, false, undefined, 'RECHAZADO');
+  return ok ? { ok: true } : { ok: false, message: 'Error al denegar la placa.' };
+}
+
 /* ─────────────────────────────────────────────────────────────
    Personas — autorización
    ───────────────────────────────────────────────────────── */
@@ -531,6 +539,14 @@ export async function unauthorizePersona(id: string): Promise<RegistroActionResu
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const ok = await updatePersonaAutorizado(id, false);
   return ok ? { ok: true } : { ok: false, message: 'Error al revocar la persona.' };
+}
+
+export async function denyPersona(id: string): Promise<RegistroActionResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
+  const ok = await updatePersonaAutorizado(id, false, undefined, 'RECHAZADO');
+  return ok ? { ok: true } : { ok: false, message: 'Error al denegar la persona.' };
 }
 
 /* ─────────────────────────────────────────────────────────────

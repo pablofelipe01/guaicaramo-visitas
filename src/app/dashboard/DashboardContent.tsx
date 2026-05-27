@@ -104,11 +104,15 @@ export default function DashboardContent({ registros, placas, personas, usuario,
             </div>
             <div className="db-stat-card stat-pendiente">
               <span className="db-stat-label">Pendientes</span>
-              <span className="db-stat-value">{placas.filter(p => !p.autorizado).length + personas.filter(p => !p.autorizado).length}</span>
+              <span className="db-stat-value">{placas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length + personas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length}</span>
             </div>
             <div className="db-stat-card stat-aprobado">
               <span className="db-stat-label">Autorizados</span>
               <span className="db-stat-value">{placas.filter(p => p.autorizado).length + personas.filter(p => p.autorizado).length}</span>
+            </div>
+            <div className="db-stat-card stat-negado">
+              <span className="db-stat-label">Rechazados</span>
+              <span className="db-stat-value">{placas.filter(p => p.estado === 'RECHAZADO').length + personas.filter(p => p.estado === 'RECHAZADO').length}</span>
             </div>
           </div>
           <VisitantesPanel placas={placas} personas={personas} tipo={tipo} />

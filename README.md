@@ -1,36 +1,213 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Guaicaramo Visitas
 
-## Getting Started
+Sistema de control de acceso y gestión de visitantes para la Finca Guaicaramo. Portal web full-stack que permite registrar solicitudes de ingreso, autorizar visitantes y auditar entradas/salidas en tiempo real.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev     
+## Stack
+
+| Capa | Tecnología |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Runtime | Node.js — server components + server actions |
+| Base de datos | Airtable REST API |
+| Autenticación | Sesiones HTTPOnly cookie + bcrypt |
+| Estilos | Tailwind CSS 4 + CSS custom properties |
+| Lenguaje | TypeScript 5 |
+| Rate limiting | In-memory sliding window (`src/lib/rate-limit.ts`) |
+
+---
+
+## Arquitectura
+
+```
+Browser → Next.js Server (App Router)
+               ├─ Server Components → leen Airtable directamente (no exponen credenciales)
+               ├─ Server Actions    → mutaciones (auth, authorize, deny, register)
+               └─ API Route         → /api/logout (limpia cookie de sesión)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+No hay API layer propia. Toda la persistencia va directamente a Airtable via REST desde el servidor.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Modelo de datos (Airtable)
 
-## Learn More
+### ADMINISTRADORES
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `usuario` | text | Nombre de usuario |
+| `cedula` | text | Cédula (identificador de login) |
+| `nombre` | text | Nombre completo |
+| `contraseña` | text | Hash bcrypt |
+| `tipo` | select | `Invita` \| `Autoriza` \| `Superadmin` |
+| `areas` | multiSelect | Áreas de responsabilidad |
 
-To learn more about Next.js, take a look at the following resources:
+### PLACAS
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `placa` | text | Número de placa |
+| `cedula` | text | Cédula del conductor |
+| `conductor` | text | Nombre del conductor |
+| `autorizado` | boolean | Acceso activo al gate |
+| `estado` | singleSelect | `PENDIENTE` \| `AUTORIZADO` \| `RECHAZADO` |
+| `vence` | date | Fecha de expiración |
+| `notas` | text | Observaciones |
+| `responsable_visita` | text | Quien registró la solicitud |
+| `autoriza_visita` | text | Quien autorizó |
+| `Administradores` | link | Admins vinculados |
+| `Acompañantes` | link → PERSONAS | Personas en el vehículo |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### PERSONAS
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `cedula` | text | Número de cédula |
+| `nombre` | text | Nombre completo |
+| `cargo` | text | Cargo o rol |
+| `autorizado` | boolean | Acceso activo al gate |
+| `estado` | singleSelect | `PENDIENTE` \| `AUTORIZADO` \| `RECHAZADO` |
+| `vence` | date | Fecha de expiración |
+| `notas` | text | Observaciones |
+| `responsable_visita` | text | Quien registró / autorizó |
+| `Administradores` | link | Admins vinculados |
+| `Acompañantes` | link → PERSONAS | Personas asociadas |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### REGISTROS
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `placa` | text | Placa del vehículo |
+| `cedula` | text | Cédula del visitante |
+| `tipo` | select | `ENTRADA` \| `SALIDA` \| `MANUAL` \| `SALIDA_SIN_ENTRADA` |
+| `status` | select | `PENDIENTE` \| `APROBADO` \| `NEGADO` \| `SALIDA_SIN_ENTRADA` |
+| `categoria` | select | `VEHICULO` \| `PEATON` \| `FIN_DE_SEMANA` |
+| `entry_time` | datetime | Hora de entrada |
+| `exit_time` | datetime | Hora de salida |
+| `approved_by` | text | Quien aprobó |
+| `supervisor` | text | Supervisor de turno |
+| `comment` | text | Motivo de rechazo |
+| `motivo_visita` | text | Motivo declarado |
+| `nombre_visitante` | text | Nombre del visitante |
+| `rejected_time` | datetime | Hora de rechazo |
+| `nodo_origen` | text | Punto de ingreso |
+| `placaIds` | link → PLACAS | Placa vinculada |
+| `personaIds` | link → PERSONAS | Persona vinculada |
 
-## Deploy on Vercel
+### FINDE_SEMANA
+Programación semanal de personal autorizado para fines de semana. Gestionado exclusivamente por Superadmin.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### ITEMS
+Órdenes de salida de materiales/bienes. Campos incluyen `concepto`, `destino`, `autorizado_por`, `usado`, `fecha_autorizacion`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Roles y permisos
+
+| Tipo | Acceso |
+|---|---|
+| `Invita` | Puede registrar visitantes; no puede autorizar |
+| `Autoriza` | Registrar + autorizar/denegar placas, personas y registros pendientes |
+| `Superadmin` | Todo lo anterior + Programación Semanal + Órdenes de Salida |
+
+---
+
+## Flujo de autorización de visitantes
+
+```
+[Público] Solicita ingreso
+    ↓ submitVisitorRequest()
+    Crea PLACA o PERSONA con autorizado=false, estado='PENDIENTE'
+    ↓
+[Admin Autoriza] Revisa panel Visitantes
+    ├─ Autorizar  → autorizado=true,  estado='AUTORIZADO'
+    ├─ Denegar    → autorizado=false, estado='RECHAZADO'
+    └─ Revocar    → autorizado=false, estado='PENDIENTE'  (solo desde AUTORIZADO)
+
+[Gate / Sistema de entrada]
+    Lee campo `autorizado` (boolean) para decisión de acceso
+```
+
+`autorizado` (boolean) y `estado` (select) se escriben siempre en el mismo PATCH.
+`autorizado` es el campo de decisión binaria del gate; `estado` es la fuente de verdad para la UI de administración.
+
+---
+
+## Autenticación
+
+- Sesión almacenada en cookie HTTPOnly cifrada (`session`)
+- Login por cédula + PIN (4 dígitos, hasheado con bcrypt)
+- Rate limiter: máximo N intentos por IP en ventana deslizante (`src/lib/rate-limit.ts`)
+- Logout: `POST /api/logout` limpia la cookie y redirige a `/login`
+
+---
+
+## Variables de entorno requeridas
+
+```
+# Airtable
+AIRTABLE_GUAICARAMO_VISITAS_API_KEY=
+AIRTABLE_BASE_ID=
+AIRTABLE_TABLE_ADMINISTRADORES=
+AIRTABLE_TABLE_PLACAS=
+AIRTABLE_TABLE_REGISTROS=
+AIRTABLE_TABLE_PERSONAS=
+AIRTABLE_TABLE_FINDE_SEMANA=
+AIRTABLE_TABLE_ITEMS=
+
+# Zona horaria (Colombia: -05:00)
+APP_TZ_OFFSET=
+```
+
+---
+
+## Estructura de directorios
+
+```
+src/
+├── app/
+│   ├── page.tsx                     — Landing page pública
+│   ├── layout.tsx                   — Root layout (fuentes, metadata)
+│   ├── globals.css                  — Design tokens y estilos globales
+│   ├── actions.ts                   — Server actions (toda la lógica de negocio)
+│   ├── login/page.tsx               — Página de autenticación
+│   ├── dashboard/
+│   │   ├── page.tsx                 — Carga datos y valida sesión (Server Component)
+│   │   ├── DashboardContent.tsx     — Shell con tabs por rol
+│   │   ├── RegistrosPanel.tsx       — Auditoría de entradas/salidas
+│   │   ├── VisitantesPanel.tsx      — Gestión unificada de placas + personas
+│   │   ├── PlacasPanel.tsx          — Gestión de vehículos
+│   │   ├── PersonasPanel.tsx        — Gestión de peatones
+│   │   ├── RegistrarVisitantePanel.tsx — Formulario de nueva solicitud
+│   │   ├── ProgramacionSemanalPanel.tsx — Programación fines de semana (Superadmin)
+│   │   └── OrdenesSalidaPanel.tsx   — Órdenes de salida de items (Superadmin)
+│   └── api/logout/route.ts          — Endpoint de cierre de sesión
+├── lib/
+│   ├── airtable.ts                  — Cliente REST Airtable: tipos, mappers, funciones CRUD
+│   ├── hooks.ts                     — useReveal, useCounter
+│   └── rate-limit.ts                — Rate limiter en memoria
+└── components/
+    ├── nav.tsx                      — Barra de navegación
+    ├── icons.tsx                    — Iconos SVG
+    ├── decorations.tsx              — Wordmark, fondos decorativos
+    └── landing/
+        ├── hero.tsx                 — Sección principal de la landing
+        └── footer.tsx               — Pie de página
+```
+
+---
+
+## Instalación y desarrollo
+
+```bash
+npm install
+cp .env.example .env.local   # completar con credenciales reales
+npm run dev
+```
+
+---
+
+## Convenciones de código
+
+- Toda mutación de datos va en `src/app/actions.ts` como Server Action (`'use server'`)
+- Toda lectura de Airtable en `src/lib/airtable.ts`; los componentes no llaman a `fetch` directamente
+- Los Server Components del dashboard hacen la carga de datos; los Client Components solo manejan estado UI
+- Zona horaria: se usa `APP_TZ_OFFSET` y `America/Bogota` en los formateos de fecha; no usar `new Date().toLocaleString()` sin zona explícita
