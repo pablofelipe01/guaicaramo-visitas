@@ -4,12 +4,11 @@ import { useState } from 'react';
 import type { RegistroRecord, PlacaRecord, PersonaRecord, ItemRecord } from '@/lib/airtable';
 import RegistrosPanel from './RegistrosPanel';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
-import PlacasPanel from './PlacasPanel';
-import PersonasPanel from './PersonasPanel';
+import VisitantesPanel from './VisitantesPanel';
 import ProgramacionSemanalPanel from './ProgramacionSemanalPanel';
 import OrdenesSalidaPanel from './OrdenesSalidaPanel';
 
-type Tab = 'registros' | 'placas' | 'personas' | 'registrar' | 'programacion' | 'ordenes';
+type Tab = 'registros' | 'visitantes' | 'registrar' | 'programacion' | 'ordenes';
 
 interface Props {
   registros: RegistroRecord[];
@@ -38,19 +37,11 @@ export default function DashboardContent({ registros, placas, personas, usuario,
         </button>
         <button
           type="button"
-          className={`db-tab${tab === 'placas' ? ' active' : ''}`}
-          onClick={() => setTab('placas')}
+          className={`db-tab${tab === 'visitantes' ? ' active' : ''}`}
+          onClick={() => setTab('visitantes')}
         >
-          Vehículos
-          <span className="db-tab-count">{placas.length}</span>
-        </button>
-        <button
-          type="button"
-          className={`db-tab${tab === 'personas' ? ' active' : ''}`}
-          onClick={() => setTab('personas')}
-        >
-          Personas
-          <span className="db-tab-count">{personas.length}</span>
+          Visitantes
+          <span className="db-tab-count">{placas.length + personas.length}</span>
         </button>
         <button
           type="button"
@@ -104,43 +95,23 @@ export default function DashboardContent({ registros, placas, personas, usuario,
         </>
       )}
 
-      {tab === 'placas' && (
+      {tab === 'visitantes' && (
         <>
           <div className="db-stats">
             <div className="db-stat-card">
-              <span className="db-stat-label">Total vehículos</span>
-              <span className="db-stat-value">{placas.length}</span>
+              <span className="db-stat-label">Total visitantes</span>
+              <span className="db-stat-value">{placas.length + personas.length}</span>
             </div>
             <div className="db-stat-card stat-pendiente">
               <span className="db-stat-label">Pendientes</span>
-              <span className="db-stat-value">{placas.filter(p => !p.autorizado).length}</span>
+              <span className="db-stat-value">{placas.filter(p => !p.autorizado).length + personas.filter(p => !p.autorizado).length}</span>
             </div>
             <div className="db-stat-card stat-aprobado">
               <span className="db-stat-label">Autorizados</span>
-              <span className="db-stat-value">{placas.filter(p => p.autorizado).length}</span>
+              <span className="db-stat-value">{placas.filter(p => p.autorizado).length + personas.filter(p => p.autorizado).length}</span>
             </div>
           </div>
-          <PlacasPanel placas={placas} tipo={tipo} />
-        </>
-      )}
-
-      {tab === 'personas' && (
-        <>
-          <div className="db-stats">
-            <div className="db-stat-card">
-              <span className="db-stat-label">Total personas</span>
-              <span className="db-stat-value">{personas.length}</span>
-            </div>
-            <div className="db-stat-card stat-pendiente">
-              <span className="db-stat-label">Pendientes</span>
-              <span className="db-stat-value">{personas.filter(p => !p.autorizado).length}</span>
-            </div>
-            <div className="db-stat-card stat-aprobado">
-              <span className="db-stat-label">Autorizadas</span>
-              <span className="db-stat-value">{personas.filter(p => p.autorizado).length}</span>
-            </div>
-          </div>
-          <PersonasPanel personas={personas} tipo={tipo} />
+          <VisitantesPanel placas={placas} personas={personas} tipo={tipo} />
         </>
       )}
 

@@ -47,6 +47,8 @@ export interface PlacaRecord {
   vence?: string;   // ISO date "YYYY-MM-DD"
   notas?: string;
   adminIds?: string[];  // linked Administradores record IDs
+  responsable_visita?: string;
+  acompañanteIds?: string[];  // linked Personas record IDs (acompañantes en el vehículo)
 }
 
 export interface RegistroCreateFields {
@@ -83,7 +85,9 @@ export interface PersonaRecord {
   vence?: string;
   cargo?: string;
   notas?: string;
-  adminIds?: string[];  // linked Administradores record IDs
+  adminIds?: string[];
+  responsable_visita?: string;
+  acompañanteIds?: string[];
 }
 
 export interface AdminRecord {
@@ -147,6 +151,7 @@ export async function findPlacaByPlaca(placa: string): Promise<PlacaRecord | nul
     autorizado: r.fields.autorizado === true,
     vence: r.fields.vence,
     notas: r.fields.notas,
+    acompañanteIds: r.fields.Acompañantes ?? [],
   };
 }
 
@@ -391,6 +396,8 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
     vence:      r.fields.vence,
     notas:      r.fields.notas,
     adminIds:   r.fields.Administradores ?? [],
+    responsable_visita: r.fields.responsable_visita,
+    acompañanteIds: r.fields.Acompañantes ?? [],
   }));
 }
 
@@ -417,6 +424,38 @@ export async function updatePlacaAutorizado(
   return res.ok;
 }
 
+/** Vincula acompañantes a una persona peatón (campo Acompañantes en Personas). */
+export async function updatePersonaAcompanantes(
+  id: string,
+  acompananteIds: string[],
+): Promise<boolean> {
+  const res = await fetch(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ fields: { Acompañantes: acompananteIds } }),
+  });
+  return res.ok;
+}
+
+/** Actualiza los acompañantes de una placa (personas vinculadas).
+ *  Recibe un array de IDs de personas que acompañan al conductor.
+ */
+export async function updatePlacaAcompanantes(
+  id: string,
+  acompanianteIds: string[],
+): Promise<boolean> {
+  const res = await fetch(`${apiUrl(getTable('PLACAS'))}/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      fields: {
+        Acompañantes: acompanianteIds,
+      },
+    }),
+  });
+  return res.ok;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Personas — lista y autorización
    ───────────────────────────────────────────────────────── */
@@ -437,13 +476,15 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data.records ?? []).map((r: any): PersonaRecord => ({
     id: r.id,
-    cedula:     r.fields.cedula     ?? '',
-    nombre:     r.fields.nombre     ?? '',
-    autorizado: r.fields.autorizado === true,
-    vence:      r.fields.vence,
-    cargo:      r.fields.cargo,
-    notas:      r.fields.notas,
-    adminIds:   r.fields.Administradores ?? [],
+    cedula:          r.fields.cedula          ?? '',
+    nombre:          r.fields.nombre          ?? '',
+    autorizado:      r.fields.autorizado      === true,
+    vence:           r.fields.vence,
+    cargo:           r.fields.cargo,
+    notas:           r.fields.notas,
+    adminIds:        r.fields.Administradores ?? [],
+    responsable_visita: r.fields.responsable_visita,
+    acompañanteIds:  r.fields['Acompañantes'] ?? [],
   }));
 }
 

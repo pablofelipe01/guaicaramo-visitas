@@ -132,13 +132,24 @@ export default function RegistrarVisitantePanel() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    console.log('[handleSubmit] Iniciando validación', {
+      cedula, nombre, placa, motivoVisita, fechaVencimiento,
+      tipoTransporte, acompanantes,
+    });
     const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
+    console.log('[handleSubmit] Errores encontrados:', errs);
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      console.log('[handleSubmit] Validación fallida, mostrando errores');
+      return;
+    }
+    console.log('[handleSubmit] Validación exitosa, enviando solicitud');
     setErrors({});
     startTransition(async () => {
       const res = await submitVisitorRequest(
         cedula, nombre, placa, motivoVisita, acompanantes, tipoTransporte, fechaVencimiento || undefined,
       );
+      console.log('[handleSubmit] Respuesta de servidor:', res);
       setResult(res);
     });
   }
@@ -148,6 +159,26 @@ export default function RegistrarVisitantePanel() {
     setCedula(''); setNombre(''); setPlaca('');
     setTipoTransporte('vehiculo'); setFechaVencimiento('');
     setMotivoVisita(''); setAcompanantes([]); setErrors({});
+  }
+
+  function fillTestData() {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(17, 0, 0, 0);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const isoDateTime = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`;
+
+    setCedula('1121917552');
+    setNombre('Sergio Ricardo Oliveros');
+    setPlaca('HJV606');
+    setMotivoVisita('Visita Comercial - Test');
+    setFechaVencimiento(isoDateTime);
+    setAcompanantes([
+      { cedula: '1018203040', nombre: 'Juan Pérez García' },
+      { cedula: '1015487923', nombre: 'María López Rodríguez' },
+      { cedula: '1098765432', nombre: 'Carlos Gómez Martínez' },
+    ]);
+    setErrors({});
   }
 
   /* ── Success state ── */
@@ -216,7 +247,6 @@ export default function RegistrarVisitantePanel() {
               Registrar visitante
             </h2>
           </div>
-
         </div>
 
         {/* Form body */}
@@ -334,7 +364,7 @@ export default function RegistrarVisitantePanel() {
                     }
                     setFechaVencimiento(val);
                   }}
-                  min={new Date().toISOString().slice(0, 16)} disabled={isPending}
+                  min={(() => { const n = new Date(); const p = (x: number) => String(x).padStart(2,'0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}T${p(n.getHours())}:${p(n.getMinutes())}`; })()} disabled={isPending}
                   style={{ paddingRight: 40 }}
                   aria-describedby={errors.fechaVencimiento ? 'rv-err-vence' : undefined} />
                 <span className="field-icon"><IconCalendar /></span>

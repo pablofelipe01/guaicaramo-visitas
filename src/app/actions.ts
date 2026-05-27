@@ -12,7 +12,9 @@ import {
   updateAdminPassword,
   updateRegistroStatus,
   updatePlacaAutorizado,
+  updatePlacaAcompanantes,
   updatePersonaAutorizado,
+  updatePersonaAcompanantes,
   createFinDeSemanaRecords,
   type FinDeSemanaPersona,
   createItem,
@@ -63,11 +65,11 @@ export async function submitVisitorRequest(
   const placaUpper = placa.toUpperCase().trim();
   const cedulaTrim = cedula.trim();
   const esVehiculo = (tipoTransporte ?? 'vehiculo') === 'vehiculo';
-  // Convierte datetime-local (YYYY-MM-DDTHH:mm, hora Colombia UTC-5) a ISO UTC
-  // Se añade el offset explícito -05:00 para que el servidor (UTC) no lo
-  // malinterprete como hora UTC.
+  // Convierte datetime-local (YYYY-MM-DDTHH:mm, hora local de la finca) a ISO UTC.
+  // Se añade el offset de zona horaria para que el servidor (UTC) no lo malinterprete.
+  const tzOffset = process.env.APP_TZ_OFFSET ?? '-05:00';
   const venceISO = fechaVencimiento
-    ? new Date(`${fechaVencimiento}-05:00`).toISOString()
+    ? new Date(`${fechaVencimiento}${tzOffset}`).toISOString()
     : undefined;
   // Quién hace el registro (puede ser undefined si no hay sesión, ej. desde el portal público)
   const session = await getSession();
@@ -115,6 +117,8 @@ export async function submitVisitorRequest(
           ? `${motivoTrim} — acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`
           : `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`;
 
+      console.log('[submitVisitorRequest] Creando placa:', { placa: placaUpper, conductor: nombreTrim });
+
       const solicitudes: Promise<string | null>[] = [
         createPlacaSolicitud({
           placa:          placaUpper,
@@ -125,8 +129,9 @@ export async function submitVisitorRequest(
           registrado_por: registradoPor,
           adminId,
         }),
-        ...(acompanantes ?? []).map(ac =>
-          createPersona({
+        ...(acompanantes ?? []).map((ac, idx) => {
+          console.log(`[submitVisitorRequest] Creando acompañante ${idx + 1}:`, { cedula: ac.cedula, nombre: ac.nombre });
+          return createPersona({
             cedula:         ac.cedula.trim(),
             nombre:         ac.nombre.trim(),
             cargo:          'Visitante',
@@ -134,16 +139,32 @@ export async function submitVisitorRequest(
             vence:          venceISO,
             registrado_por: registradoPor,
             adminId,
-          }),
-        ),
+          });
+        }),
       ];
-      await Promise.all(solicitudes);
+
+      const resultados = await Promise.all(solicitudes);
+      console.log('[submitVisitorRequest] Resultados:', resultados);
+
+      if (resultados.some(r => !r)) {
+        throw new Error('Falla al crear uno o más registros en Airtable');
+      }
+
+      // Vincular acompañantes al registro de Placas
+      const placaId = resultados[0]!;
+      const acompananteIds = (resultados.slice(1) as (string | null)[]).filter((id): id is string => id !== null);
+      if (acompananteIds.length > 0) {
+        console.log('[submitVisitorRequest] Vinculando acompañantes a placa:', placaId, acompananteIds);
+        await updatePlacaAcompanantes(placaId, acompananteIds);
+      }
     } else {
       // ── Peatón → tabla Personas ──────────────────────────────────────────
       const notaAc = (ac: { cedula: string; nombre: string }) =>
         motivoTrim
           ? `${motivoTrim} — acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`
           : `Acompañante de: ${nombreTrim} (cédula: ${cedulaTrim})`;
+
+      console.log('[submitVisitorRequest] Creando persona (peatón):', { nombre: nombreTrim });
 
       const solicitudes: Promise<string | null>[] = [
         createPersona({
@@ -155,8 +176,9 @@ export async function submitVisitorRequest(
           registrado_por: registradoPor,
           adminId,
         }),
-        ...(acompanantes ?? []).map(ac =>
-          createPersona({
+        ...(acompanantes ?? []).map((ac, idx) => {
+          console.log(`[submitVisitorRequest] Creando acompañante ${idx + 1}:`, { cedula: ac.cedula, nombre: ac.nombre });
+          return createPersona({
             cedula:         ac.cedula.trim(),
             nombre:         ac.nombre.trim(),
             cargo:          'Visitante',
@@ -164,10 +186,24 @@ export async function submitVisitorRequest(
             vence:          venceISO,
             registrado_por: registradoPor,
             adminId,
-          }),
-        ),
+          });
+        }),
       ];
-      await Promise.all(solicitudes);
+
+      const resultados = await Promise.all(solicitudes);
+      console.log('[submitVisitorRequest] Resultados:', resultados);
+
+      if (resultados.some(r => !r)) {
+        throw new Error('Falla al crear uno o más registros en Airtable');
+      }
+
+      // Vincular acompañantes al registro principal de la persona
+      const personaId = resultados[0]!;
+      const acompananteIds = (resultados.slice(1) as (string | null)[]).filter((id): id is string => id !== null);
+      if (acompananteIds.length > 0) {
+        console.log('[submitVisitorRequest] Vinculando acompañantes a persona:', personaId, acompananteIds);
+        await updatePersonaAcompanantes(personaId, acompananteIds);
+      }
     }
 
     /*
@@ -196,10 +232,13 @@ export async function submitVisitorRequest(
     return { status: 'PENDIENTE' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[submitVisitorRequest]', msg);
+    console.error('[submitVisitorRequest] Error:', msg, err);
     // Exponer mensajes de configuración faltante (no contienen datos sensibles)
     if (msg.startsWith('Falta variable de entorno')) {
       return { status: 'ERROR', message: `Configuración incompleta: ${msg}` };
+    }
+    if (msg.includes('Falla al crear')) {
+      return { status: 'ERROR', message: 'Error al crear registros en Airtable. Verifica los datos e intenta de nuevo.' };
     }
     return { status: 'ERROR', message: 'Error de conexión. Intenta de nuevo.' };
   }

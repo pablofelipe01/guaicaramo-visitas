@@ -116,6 +116,7 @@ export default function PersonasPanel({ personas, tipo }: Props) {
                 <th>Cargo</th>
                 <th>Estado</th>
                 <th>Vence</th>
+                <th>Registrado por</th>
                 <th>Notas</th>
                 {canAuthorize && <th style={{ textAlign: 'right' }}>Acción</th>}
               </tr>
@@ -139,6 +140,9 @@ export default function PersonasPanel({ personas, tipo }: Props) {
                     </td>
                     <td data-label="Vence" style={{ fontSize: 13, color: expired ? 'var(--g-coral)' : 'var(--g-ink-2)' }}>
                       {formatDate(p.vence)}
+                    </td>
+                    <td data-label="Registrado por" style={{ fontSize: 12, color: 'var(--g-ink-3)' }}>
+                      {p.responsable_visita || '—'}
                     </td>
                     <td data-label="Notas" style={{ fontSize: 12, color: 'var(--g-ink-3)', maxWidth: expandedNotes.has(p.id) ? undefined : 200 }}>
                       <span
