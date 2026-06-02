@@ -98,7 +98,7 @@ export interface AdminRecord {
   cedula: string;
   nombre: string;
   contraseña: string;
-  tipo?: 'Invita' | 'Autoriza' | 'Superadmin';
+  tipo?: 'Invita' | 'Autoriza' | 'Superadmin' | 'Porteria';
   areas?: string[];
 }
 

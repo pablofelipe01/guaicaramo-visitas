@@ -27,7 +27,8 @@ export default async function DashboardPage() {
 
   const isAutoriza   = tipo === 'Autoriza';
   const isSuperadmin = tipo === 'Superadmin';
-  const canViewDashboard = isAutoriza || isSuperadmin;
+  const isPorteria   = tipo === 'Porteria';
+  const canViewDashboard = isAutoriza || isSuperadmin || isPorteria;
 
   // Solo carga datos si el usuario puede ver el dashboard
   let placas: PlacaRecord[] = [], personas: PersonaRecord[] = [], registros: RegistroRecord[] = [], items: ItemRecord[] = [];

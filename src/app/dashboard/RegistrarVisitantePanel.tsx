@@ -99,10 +99,6 @@ export default function RegistrarVisitantePanel() {
     if (!motivoVisita.trim())                             e.motivoVisita     = 'Indica el motivo de la visita';
     if (!fechaVencimiento) {
       e.fechaVencimiento = 'Indica la fecha de vencimiento';
-    } else {
-      const sel = new Date(fechaVencimiento);
-      const h = sel.getHours(); const m = sel.getMinutes();
-      if (h > 17 || (h === 17 && m > 0)) e.fechaVencimiento = 'La hora máxima permitida es 5:00 PM';
     }
     acompanantes.forEach((ac, i) => {
       if (!ac.cedula.trim())                              e[`ac_cedula_${i}`] = 'Ingresa el número de cédula';
@@ -147,7 +143,8 @@ export default function RegistrarVisitantePanel() {
     setErrors({});
     startTransition(async () => {
       const res = await submitVisitorRequest(
-        cedula, nombre, placa, motivoVisita, acompanantes, tipoTransporte, fechaVencimiento || undefined,
+        cedula, nombre, placa, motivoVisita, acompanantes, tipoTransporte,
+        fechaVencimiento ? `${fechaVencimiento}T17:00` : undefined,
       );
       console.log('[handleSubmit] Respuesta de servidor:', res);
       setResult(res);
@@ -164,15 +161,14 @@ export default function RegistrarVisitantePanel() {
   function fillTestData() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(17, 0, 0, 0);
     const pad = (n: number) => String(n).padStart(2, '0');
-    const isoDateTime = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T${pad(tomorrow.getHours())}:${pad(tomorrow.getMinutes())}`;
+    const isoDate = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
 
     setCedula('1121917552');
     setNombre('Sergio Ricardo Oliveros');
     setPlaca('HJV606');
     setMotivoVisita('Visita Comercial - Test');
-    setFechaVencimiento(isoDateTime);
+    setFechaVencimiento(isoDate);
     setAcompanantes([
       { cedula: '1018203040', nombre: 'Juan Pérez García' },
       { cedula: '1015487923', nombre: 'María López Rodríguez' },
@@ -289,8 +285,8 @@ export default function RegistrarVisitantePanel() {
             <label className="field-label">¿Cómo llega el visitante?</label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
               {([
-                { id: 'vehiculo', label: 'En vehículo', icon: <IconCar width={17} height={17} /> },
-                { id: 'peaton',   label: 'A pie',        icon: <IconWalk /> },
+                { id: 'vehiculo', label: 'Vehículo', icon: <IconCar width={17} height={17} /> },
+                { id: 'peaton',   label: 'Persona',  icon: <IconWalk /> },
               ] as const).map(({ id, label, icon }) => (
                 <button key={id} type="button" disabled={isPending}
                   onClick={() => {
@@ -345,26 +341,15 @@ export default function RegistrarVisitantePanel() {
 
             <div className="field">
               <label className="field-label" htmlFor="rv-vence">
-                Fecha y hora de vencimiento
+                Fecha de vencimiento
                 <span style={{ fontWeight: 400, color: 'var(--g-ink-3)', marginLeft: 6 }}>
-                  (máx. 5:00 PM)
+                  (vence a las 5:00 PM)
                 </span>
               </label>
               <div className="field-input-wrap">
-                <input id="rv-vence" type="datetime-local" value={fechaVencimiento}
-                  onChange={e => {
-                    const val = e.target.value;
-                    if (val) {
-                      const [datePart, timePart] = val.split('T');
-                      const [h, m] = timePart.split(':').map(Number);
-                      if (h > 17 || (h === 17 && m > 0)) {
-                        setFechaVencimiento(`${datePart}T17:00`);
-                        return;
-                      }
-                    }
-                    setFechaVencimiento(val);
-                  }}
-                  min={(() => { const n = new Date(); const p = (x: number) => String(x).padStart(2,'0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}T${p(n.getHours())}:${p(n.getMinutes())}`; })()} disabled={isPending}
+                <input id="rv-vence" type="date" value={fechaVencimiento}
+                  onChange={e => setFechaVencimiento(e.target.value)}
+                  min={(() => { const n = new Date(); const p = (x: number) => String(x).padStart(2,'0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`; })()} disabled={isPending}
                   style={{ paddingRight: 40 }}
                   aria-describedby={errors.fechaVencimiento ? 'rv-err-vence' : undefined} />
                 <span className="field-icon"><IconCalendar /></span>
