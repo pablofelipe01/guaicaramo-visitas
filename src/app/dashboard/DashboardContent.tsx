@@ -21,6 +21,7 @@ interface Props {
 }
 
 export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items }: Props) {
+  const isPorteria = tipo === 'Porteria';
   const [tab, setTab] = useState<Tab>('registros');
 
   return (
@@ -43,13 +44,15 @@ export default function DashboardContent({ registros, placas, personas, usuario,
           Visitantes
           <span className="db-tab-count">{placas.length + personas.length}</span>
         </button>
-        <button
-          type="button"
-          className={`db-tab${tab === 'registrar' ? ' active' : ''}`}
-          onClick={() => setTab('registrar')}
-        >
-          Registrar visitante
-        </button>
+        {!isPorteria && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'registrar' ? ' active' : ''}`}
+            onClick={() => setTab('registrar')}
+          >
+            Registrar visitante
+          </button>
+        )}
         {tipo === 'Superadmin' && (
           <button
             type="button"
@@ -119,7 +122,7 @@ export default function DashboardContent({ registros, placas, personas, usuario,
         </>
       )}
 
-      {tab === 'registrar' && <RegistrarVisitantePanel />}
+      {tab === 'registrar' && !isPorteria && <RegistrarVisitantePanel />}
       {tab === 'programacion' && tipo === 'Superadmin' && <ProgramacionSemanalPanel />}
       {tab === 'ordenes' && tipo === 'Superadmin' && <OrdenesSalidaPanel items={items} />}
     </>
