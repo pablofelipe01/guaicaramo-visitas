@@ -7,7 +7,6 @@ import { approveRegistro, rejectRegistro } from '@/app/actions';
 
 type View = 'tabla' | 'tarjetas';
 type CategoriaFilter = '' | 'VEHICULO' | 'PEATON' | 'FIN_DE_SEMANA';
-type EstadoFilter    = '' | 'PENDIENTE' | 'APROBADO' | 'NEGADO' | 'SALIDA_SIN_ENTRADA';
 
 interface Props {
   registros: RegistroRecord[];
@@ -94,29 +93,16 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
   const router = useRouter();
   const [view,            setView]            = useState<View>('tabla');
   const [filterCategoria, setFilterCategoria] = useState<CategoriaFilter>('');
-  const [filterEstado,    setFilterEstado]    = useState<EstadoFilter>('');
   const [isPending, startTransition] = useTransition();
 
   const [rejectId,      setRejectId]      = useState<string | null>(null);
   const [rejectComment, setRejectComment] = useState('');
   const [actionError,   setActionError]   = useState<string | null>(null);
 
-  // Apply both filters sequentially
-  const byCategoria = filterCategoria === ''
+  // Apply categoria filter
+  const filtered = filterCategoria === ''
     ? registros
     : registros.filter(r => r.categoria === filterCategoria);
-
-  const filtered = filterEstado === ''
-    ? byCategoria
-    : byCategoria.filter(r => r.status === filterEstado);
-
-  // Counts always reflect the categoria filter so estado options stay meaningful
-  const counts = {
-    total:      byCategoria.length,
-    pendientes: byCategoria.filter(r => r.status === 'PENDIENTE').length,
-    aprobados:  byCategoria.filter(r => r.status === 'APROBADO').length,
-    negados:    byCategoria.filter(r => r.status === 'NEGADO').length,
-  };
 
   // Counts per categoria (unfiltered)
   const categoriaCounts: Record<string, number> = {};
@@ -200,20 +186,6 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
               <option value="VEHICULO">🚗 Vehículo ({categoriaCounts['VEHICULO'] ?? 0})</option>
               <option value="PEATON">🚶 Peatón ({categoriaCounts['PEATON'] ?? 0})</option>
               <option value="FIN_DE_SEMANA">📅 Fin de semana ({categoriaCounts['FIN_DE_SEMANA'] ?? 0})</option>
-            </select>
-          </div>
-          <div className="db-filter-group">
-            <span className="db-filter-label">Estado</span>
-            <select
-              className={`db-filter-select${filterEstado !== '' ? ' is-active' : ''}`}
-              value={filterEstado}
-              onChange={e => setFilterEstado(e.target.value as EstadoFilter)}
-            >
-              <option value="">Todos ({counts.total})</option>
-              <option value="PENDIENTE">Pendiente ({counts.pendientes})</option>
-              <option value="APROBADO">Aprobado ({counts.aprobados})</option>
-              <option value="NEGADO">Negado ({counts.negados})</option>
-              <option value="SALIDA_SIN_ENTRADA">Sin entrada</option>
             </select>
           </div>
           <span className="db-filter-count">

@@ -24,6 +24,10 @@ export default function DashboardContent({ registros, placas, personas, usuario,
   const isPorteria = tipo === 'Porteria';
   const [tab, setTab] = useState<Tab>('registros');
 
+  const visitantesPendientes =
+    placas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length +
+    personas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length;
+
   return (
     <>
       {/* Tab switcher */}
@@ -38,11 +42,16 @@ export default function DashboardContent({ registros, placas, personas, usuario,
         </button>
         <button
           type="button"
-          className={`db-tab${tab === 'visitantes' ? ' active' : ''}`}
+          className={`db-tab${tab === 'visitantes' ? ' active' : ''}${visitantesPendientes > 0 ? ' has-pending' : ''}`}
           onClick={() => setTab('visitantes')}
         >
           Visitantes
           <span className="db-tab-count">{placas.length + personas.length}</span>
+          {visitantesPendientes > 0 && (
+            <span className="db-tab-alert" title={`${visitantesPendientes} pendiente(s) por autorizar`}>
+              {visitantesPendientes} pendiente{visitantesPendientes !== 1 ? 's' : ''}
+            </span>
+          )}
         </button>
         {!isPorteria && (
           <button
@@ -80,10 +89,6 @@ export default function DashboardContent({ registros, placas, personas, usuario,
             <div className="db-stat-card">
               <span className="db-stat-label">Total registros</span>
               <span className="db-stat-value">{stats.total}</span>
-            </div>
-            <div className="db-stat-card stat-pendiente">
-              <span className="db-stat-label">Pendientes</span>
-              <span className="db-stat-value">{stats.pendientes}</span>
             </div>
             <div className="db-stat-card stat-aprobado">
               <span className="db-stat-label">Aprobados</span>
