@@ -48,7 +48,10 @@ export interface PlacaRecord {
   vence?: string;   // ISO date "YYYY-MM-DD"
   notas?: string;
   adminIds?: string[];  // linked Administradores record IDs
-  responsable_visita?: string;
+  responsable_visita?: string;  // quien registró la solicitud
+  autoriza_visita?: string;     // quien autorizó la visita
+  fecha_autorizado?: string;    // ISO datetime en que se autorizó
+  creada?: string;              // ISO datetime de creación del registro
   acompañanteIds?: string[];  // linked Personas record IDs (acompañantes en el vehículo)
 }
 
@@ -88,7 +91,10 @@ export interface PersonaRecord {
   cargo?: string;
   notas?: string;
   adminIds?: string[];
-  responsable_visita?: string;
+  responsable_visita?: string;  // quien registró la solicitud
+  autoriza_visita?: string;     // quien autorizó la visita
+  fecha_autorizado?: string;    // ISO datetime en que se autorizó
+  creada?: string;              // ISO datetime de creación del registro
   acompañanteIds?: string[];
 }
 
@@ -403,6 +409,9 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
     notas:      r.fields.notas,
     adminIds:   r.fields.Administradores ?? [],
     responsable_visita: r.fields.responsable_visita,
+    autoriza_visita:    r.fields.autoriza_visita,
+    fecha_autorizado:   r.fields.fecha_autorizado,
+    creada:             r.fields.Creada,
     acompañanteIds: r.fields.Acompañantes ?? [],
   }));
 }
@@ -422,8 +431,10 @@ export async function updatePlacaAutorizado(
   const fields: Record<string, any> = { autorizado, estado };
   if (autorizado && autorizadoPor) {
     fields.autoriza_visita = autorizadoPor;
+    fields.fecha_autorizado = new Date().toISOString();
   } else if (!autorizado) {
     fields.autoriza_visita = '';
+    fields.fecha_autorizado = null;
   }
   const res = await fetch(`${apiUrl(getTable('PLACAS'))}/${id}`, {
     method: 'PATCH',
@@ -494,12 +505,16 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
     notas:           r.fields.notas,
     adminIds:        r.fields.Administradores ?? [],
     responsable_visita: r.fields.responsable_visita,
+    autoriza_visita:    r.fields.autoriza_visita,
+    fecha_autorizado:   r.fields.fecha_autorizado,
+    creada:             r.fields.Creada,
     acompañanteIds:  r.fields['Acompañantes'] ?? [],
   }));
 }
 
 /** Marca o desmarca `autorizado` en un registro de Personas.
- *  Si se pasa `autorizadoPor`, escribe el nombre en el campo `responsable_visita`.
+ *  Si se pasa `autorizadoPor`, escribe el nombre en el campo `autoriza_visita`
+ *  y registra la fecha de autorización en `fecha_autorizado`.
  *  `estadoOverride` permite forzar RECHAZADO; por defecto se deriva de `autorizado`.
  */
 export async function updatePersonaAutorizado(
@@ -512,9 +527,11 @@ export async function updatePersonaAutorizado(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fields: Record<string, any> = { autorizado, estado };
   if (autorizado && autorizadoPor) {
-    fields.responsable_visita = autorizadoPor;
+    fields.autoriza_visita = autorizadoPor;
+    fields.fecha_autorizado = new Date().toISOString();
   } else if (!autorizado) {
-    fields.responsable_visita = '';
+    fields.autoriza_visita = '';
+    fields.fecha_autorizado = null;
   }
   const res = await fetch(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
     method: 'PATCH',

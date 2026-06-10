@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PlacaRecord, PersonaRecord } from '@/lib/airtable';
 import { authorizePlaca, unauthorizePlaca, authorizePersona, unauthorizePersona, denyPlaca, denyPersona } from '@/app/actions';
@@ -23,6 +23,9 @@ type Visitante = {
   estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
   vence?: string;
   responsable_visita?: string;
+  autoriza_visita?: string;
+  fecha_autorizado?: string;
+  creada?: string;
   notas?: string;
   acompañanteIds?: string[];
 };
@@ -40,13 +43,16 @@ const GROUP_PALETTE: Array<{ bg: string; border: string }> = [
 function buildGroups(placas: PlacaRecord[], personas: PersonaRecord[]) {
   const groupMap   = new Map<string, number>(); // id → índice de grupo
   const companionSet = new Set<string>();        // ids de acompañantes (no cabezas)
+  const headCompanionIds = new Map<string, string[]>(); // headId → [companionIds]
+  const companionToHead  = new Map<string, string>();   // companionId → headId
   let g = 0;
 
   for (const p of placas) {
     const ids = p.acompañanteIds ?? [];
     if (ids.length > 0) {
       groupMap.set(p.id, g);
-      for (const aid of ids) { groupMap.set(aid, g); companionSet.add(aid); }
+      headCompanionIds.set(p.id, ids);
+      for (const aid of ids) { groupMap.set(aid, g); companionSet.add(aid); companionToHead.set(aid, p.id); }
       g++;
     }
   }
@@ -54,11 +60,44 @@ function buildGroups(placas: PlacaRecord[], personas: PersonaRecord[]) {
     const ids = p.acompañanteIds ?? [];
     if (ids.length > 0 && !groupMap.has(p.id)) {
       groupMap.set(p.id, g);
-      for (const aid of ids) { groupMap.set(aid, g); companionSet.add(aid); }
+      headCompanionIds.set(p.id, ids);
+      for (const aid of ids) { groupMap.set(aid, g); companionSet.add(aid); companionToHead.set(aid, p.id); }
       g++;
     }
   }
-  return { groupMap, companionSet };
+  return { groupMap, companionSet, headCompanionIds, companionToHead };
+}
+
+/** Reordena la lista para que cada cabeza de grupo quede seguida por sus
+ *  acompañantes presentes en la lista (manteniendo los grupos juntos). */
+function orderByGroup(
+  items: Visitante[],
+  companionToHead: Map<string, string>,
+  headCompanionIds: Map<string, string[]>,
+): Visitante[] {
+  const byId = new Map(items.map(v => [v.id, v]));
+  const present = new Set(items.map(v => v.id));
+  const ordered: Visitante[] = [];
+  const placed = new Set<string>();
+
+  for (const v of items) {
+    if (placed.has(v.id)) continue;
+    // Si es acompañante y su cabeza está en la lista, se ubicará junto a ella.
+    const headId = companionToHead.get(v.id);
+    if (headId && present.has(headId)) continue;
+
+    ordered.push(v);
+    placed.add(v.id);
+
+    const comps = headCompanionIds.get(v.id);
+    if (comps) {
+      for (const cid of comps) {
+        const comp = byId.get(cid);
+        if (comp && !placed.has(cid)) { ordered.push(comp); placed.add(cid); }
+      }
+    }
+  }
+  return ordered;
 }
 
 function formatDate(iso?: string) {
@@ -91,6 +130,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+  const [detail, setDetail] = useState<Visitante | null>(null);
 
   function toggleNote(id: string) {
     setExpandedNotes(prev => {
@@ -113,6 +153,9 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       estado: p.estado,
       vence: p.vence,
       responsable_visita: p.responsable_visita,
+      autoriza_visita: p.autoriza_visita,
+      fecha_autorizado: p.fecha_autorizado,
+      creada: p.creada,
       notas: p.notas,
       acompañanteIds: p.acompañanteIds,
     })),
@@ -126,12 +169,21 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       estado: p.estado,
       vence: p.vence,
       responsable_visita: p.responsable_visita,
+      autoriza_visita: p.autoriza_visita,
+      fecha_autorizado: p.fecha_autorizado,
+      creada: p.creada,
       notas: p.notas,
       acompañanteIds: p.acompañanteIds,
     })),
   ];
 
-  const { groupMap, companionSet } = buildGroups(placas, personas);
+  const { groupMap, companionSet, headCompanionIds, companionToHead } = buildGroups(placas, personas);
+
+  // Mapa id → nombre legible (para mostrar acompañantes en el detalle).
+  const nameById = new Map<string, string>();
+  for (const v of visitantes) {
+    nameById.set(v.id, v.tipo === 'vehiculo' ? (v.placa || v.conductor || v.cedula || v.id) : (v.nombre || v.cedula || v.id));
+  }
 
   const counts = {
     todos:       visitantes.length,
@@ -158,6 +210,14 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
         (v.cedula ?? '').toLowerCase().includes(term)
       )
     : byTab;
+
+  // Ordena del más reciente al más antiguo según la fecha de creación.
+  const sorted = [...filtered].sort(
+    (a, b) => new Date(b.creada ?? 0).getTime() - new Date(a.creada ?? 0).getTime()
+  );
+
+  // Mantiene cada vehículo/cabeza junto a sus acompañantes.
+  const ordered = orderByGroup(sorted, companionToHead, headCompanionIds);
 
   function handleAuthorize(id: string, visitType: 'vehiculo' | 'persona', authorize: boolean) {
     setActionError(null);
@@ -245,7 +305,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(v => {
+              {ordered.map(v => {
                 const expired      = isExpired(v.vence);
                 const displayName  = v.tipo === 'vehiculo' ? v.placa    : v.nombre;
                 const displaySub   = v.tipo === 'vehiculo' ? v.conductor : v.cargo;
@@ -256,10 +316,15 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                 return (
                   <tr
                     key={v.id}
-                    style={palette ? {
-                      background: palette.bg,
-                      boxShadow: `inset 3px 0 0 ${palette.border}`,
-                    } : undefined}
+                    onClick={() => setDetail(v)}
+                    title="Ver detalles de la visita"
+                    style={{
+                      cursor: 'pointer',
+                      ...(palette ? {
+                        background: palette.bg,
+                        boxShadow: `inset 3px 0 0 ${palette.border}`,
+                      } : {}),
+                    }}
                   >
                     <td data-label="Tipo">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
@@ -322,7 +387,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                     <td data-label="Notas" style={{ fontSize: 12, color: 'var(--g-ink-3)', maxWidth: expandedNotes.has(v.id) ? undefined : 200 }}>
                       <span
                         title={expandedNotes.has(v.id) ? undefined : v.notas}
-                        onClick={v.notas ? () => toggleNote(v.id) : undefined}
+                        onClick={v.notas ? (e) => { e.stopPropagation(); toggleNote(v.id); } : undefined}
                         style={{
                           display: expandedNotes.has(v.id) ? 'block' : '-webkit-box',
                           WebkitLineClamp: expandedNotes.has(v.id) ? undefined : 2,
@@ -336,7 +401,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                       </span>
                     </td>
                     {canAuthorize && (
-                      <td data-label="Acción" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <td data-label="Acción" style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                         {v.autorizado ? (
                           <button
                             onClick={() => handleAuthorize(v.id, v.tipo, false)}
@@ -383,6 +448,127 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
           </table>
         </div>
       )}
+
+      {detail && (
+        <div className="db-modal-overlay" onClick={() => setDetail(null)}>
+          <div
+            className="db-modal"
+            style={{ maxWidth: 520, gap: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+              <h3 className="db-modal-title" style={{ marginBottom: 0 }}>
+                Detalles de la visita
+              </h3>
+              <button
+                onClick={() => setDetail(null)}
+                aria-label="Cerrar"
+                style={{ background: 'none', border: 'none', fontSize: 22, lineHeight: 1, cursor: 'pointer', color: 'var(--g-ink-3)', padding: 4 }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '8px 0 18px' }}>
+              <span className="badge" style={{
+                background: detail.tipo === 'vehiculo' ? 'var(--g-blue-soft)' : 'var(--g-purple-soft)',
+                color: detail.tipo === 'vehiculo' ? 'var(--g-blue-dark)' : 'var(--g-purple-dark)',
+                fontSize: 11,
+              }}>
+                {detail.tipo === 'vehiculo' ? 'Vehículo' : 'Persona'}
+              </span>
+              {isExpired(detail.vence) ? (
+                <span className="badge badge-negado">Vencido</span>
+              ) : detail.estado === 'RECHAZADO' ? (
+                <span className="badge badge-negado">Rechazado</span>
+              ) : detail.autorizado ? (
+                <span className="badge badge-aprobado">Autorizado</span>
+              ) : (
+                <span className="badge badge-pendiente">Pendiente</span>
+              )}
+              {companionSet.has(detail.id) && (
+                <span className="badge" style={{ background: 'var(--g-cream)', color: 'var(--g-ink-3)', fontSize: 11 }}>
+                  Acompañante
+                </span>
+              )}
+            </div>
+
+            <dl style={{ display: 'grid', gridTemplateColumns: '150px 1fr', rowGap: 12, columnGap: 14, margin: 0, fontSize: 14 }}>
+              {detail.tipo === 'vehiculo' ? (
+                <>
+                  <dt style={detailLabel}>Placa</dt>
+                  <dd style={detailValue}>{detail.placa || '—'}</dd>
+                  <dt style={detailLabel}>Conductor</dt>
+                  <dd style={detailValue}>{detail.conductor || '—'}</dd>
+                </>
+              ) : (
+                <>
+                  <dt style={detailLabel}>Nombre</dt>
+                  <dd style={detailValue}>{detail.nombre || '—'}</dd>
+                  <dt style={detailLabel}>Cargo</dt>
+                  <dd style={detailValue}>{detail.cargo || '—'}</dd>
+                </>
+              )}
+              <dt style={detailLabel}>Cédula</dt>
+              <dd style={detailValue}>{detail.cedula || '—'}</dd>
+              <dt style={detailLabel}>Fecha de registro</dt>
+              <dd style={detailValue}>{formatDate(detail.creada)}</dd>
+              <dt style={detailLabel}>Vence</dt>
+              <dd style={detailValue}>{formatDate(detail.vence)}</dd>
+              <dt style={detailLabel}>Registrado por</dt>
+              <dd style={detailValue}>{detail.responsable_visita || '—'}</dd>
+              <dt style={detailLabel}>Autorizado por</dt>
+              <dd style={detailValue}>{detail.autoriza_visita || '—'}</dd>
+              <dt style={detailLabel}>Fecha autorización</dt>
+              <dd style={detailValue}>{formatDate(detail.fecha_autorizado)}</dd>
+              {(() => {
+                const compIds = headCompanionIds.get(detail.id);
+                if (compIds && compIds.length > 0) {
+                  return (
+                    <>
+                      <dt style={detailLabel}>Acompañantes</dt>
+                      <dd style={detailValue}>
+                        {compIds.map(cid => nameById.get(cid) ?? cid).join(', ')}
+                      </dd>
+                    </>
+                  );
+                }
+                const headId = companionToHead.get(detail.id);
+                if (headId) {
+                  return (
+                    <>
+                      <dt style={detailLabel}>Acompaña a</dt>
+                      <dd style={detailValue}>{nameById.get(headId) ?? headId}</dd>
+                    </>
+                  );
+                }
+                return null;
+              })()}
+              <dt style={detailLabel}>Notas</dt>
+              <dd style={{ ...detailValue, whiteSpace: 'pre-wrap' }}>{detail.notas || '—'}</dd>
+            </dl>
+
+            <div className="db-modal-actions" style={{ marginTop: 22 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setDetail(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+const detailLabel: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: 'var(--g-ink-3)',
+  alignSelf: 'start',
+};
+const detailValue: CSSProperties = {
+  margin: 0,
+  color: 'var(--g-ink)',
+  fontWeight: 500,
+  wordBreak: 'break-word',
+};

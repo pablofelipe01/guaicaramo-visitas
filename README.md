@@ -68,7 +68,9 @@ No hay API layer propia. Toda la persistencia va directamente a Airtable via RES
 | `estado` | singleSelect | `PENDIENTE` \| `AUTORIZADO` \| `RECHAZADO` |
 | `vence` | date | Fecha de expiración |
 | `notas` | text | Observaciones |
-| `responsable_visita` | text | Quien registró / autorizó |
+| `responsable_visita` | text | Quien registró la solicitud |
+| `autoriza_visita` | text | Quien autorizó |
+| `fecha_autorizado` | dateTime | Fecha/hora en que se autorizó |
 | `Administradores` | link | Admins vinculados |
 | `Acompañantes` | link → PERSONAS | Personas asociadas |
 
