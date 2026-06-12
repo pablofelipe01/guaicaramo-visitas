@@ -34,6 +34,27 @@ function authHeaders() {
   };
 }
 
+/** Pagina a través de todos los registros de una tabla sin límite artificial. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAllRecords(table: string, params: URLSearchParams): Promise<any[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const all: any[] = [];
+  let offset: string | undefined;
+  do {
+    const q = new URLSearchParams(params);
+    if (offset) q.set('offset', offset);
+    const res = await fetch(`${apiUrl(table)}?${q.toString()}`, {
+      headers: authHeaders(),
+      cache: 'no-store',
+    });
+    if (!res.ok) break;
+    const data = await res.json();
+    all.push(...(data.records ?? []));
+    offset = data.offset;
+  } while (offset);
+  return all;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Types
    ───────────────────────────────────────────────────────── */
@@ -321,21 +342,15 @@ export async function updateAdminPassword(id: string, hashedPassword: string): P
    Registros — lectura y actualización de estado
    ───────────────────────────────────────────────────────── */
 
-/** Devuelve hasta 100 registros ordenados por fecha de entrada (más recientes primero). */
+/** Devuelve todos los registros ordenados por fecha de entrada (más recientes primero). */
 export async function getRegistros(): Promise<RegistroRecord[]> {
   const params = new URLSearchParams({
-    maxRecords: '100',
     'sort[0][field]': 'entry_time',
     'sort[0][direction]': 'desc',
   });
-  const res = await fetch(
-    `${apiUrl(getTable('REGISTROS'))}?${params.toString()}`,
-    { headers: authHeaders(), cache: 'no-store' },
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
+  const records = await fetchAllRecords(getTable('REGISTROS'), params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data.records ?? []).map((r: any): RegistroRecord => ({
+  return records.map((r: any): RegistroRecord => ({
     id: r.id,
     placa: r.fields.placa ?? '',
     tipo: r.fields.tipo ?? '',
@@ -384,21 +399,15 @@ export async function updateRegistroStatus(
    Placas — lista y autorización
    ───────────────────────────────────────────────────────── */
 
-/** Devuelve hasta 100 registros de la tabla Placas, más recientes primero. */
+/** Devuelve todos los registros de la tabla Placas ordenados por placa. */
 export async function getPlacas(): Promise<PlacaRecord[]> {
   const params = new URLSearchParams({
-    maxRecords: '100',
     'sort[0][field]': 'placa',
     'sort[0][direction]': 'asc',
   });
-  const res = await fetch(
-    `${apiUrl(getTable('PLACAS'))}?${params.toString()}`,
-    { headers: authHeaders(), cache: 'no-store' },
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
+  const records = await fetchAllRecords(getTable('PLACAS'), params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data.records ?? []).map((r: any): PlacaRecord => ({
+  return records.map((r: any): PlacaRecord => ({
     id: r.id,
     placa:      r.fields.placa      ?? '',
     cedula:     r.fields.cedula     ?? '',
@@ -480,21 +489,15 @@ export async function updatePlacaAcompanantes(
    Personas — lista y autorización
    ───────────────────────────────────────────────────────── */
 
-/** Devuelve hasta 100 registros de la tabla Personas, ordenados por nombre. */
+/** Devuelve todos los registros de la tabla Personas, ordenados por nombre. */
 export async function getPersonas(): Promise<PersonaRecord[]> {
   const params = new URLSearchParams({
-    maxRecords: '100',
     'sort[0][field]': 'nombre',
     'sort[0][direction]': 'asc',
   });
-  const res = await fetch(
-    `${apiUrl(getTable('PERSONAS'))}?${params.toString()}`,
-    { headers: authHeaders(), cache: 'no-store' },
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
+  const records = await fetchAllRecords(getTable('PERSONAS'), params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data.records ?? []).map((r: any): PersonaRecord => ({
+  return records.map((r: any): PersonaRecord => ({
     id: r.id,
     cedula:          r.fields.cedula          ?? '',
     nombre:          r.fields.nombre          ?? '',
@@ -651,21 +654,15 @@ export interface ItemCreateFields {
   notas?: string;
 }
 
-/** Devuelve hasta 100 órdenes de salida, más recientes primero. */
+/** Devuelve todos los órdenes de salida, más recientes primero. */
 export async function getItems(): Promise<ItemRecord[]> {
   const params = new URLSearchParams({
-    maxRecords: '100',
     'sort[0][field]': 'fecha_salida',
     'sort[0][direction]': 'desc',
   });
-  const res = await fetch(
-    `${apiUrl(getTable('ITEMS'))}?${params.toString()}`,
-    { headers: authHeaders(), cache: 'no-store' },
-  );
-  if (!res.ok) return [];
-  const data = await res.json();
+  const records = await fetchAllRecords(getTable('ITEMS'), params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data.records ?? []).map((r: any): ItemRecord => ({
+  return records.map((r: any): ItemRecord => ({
     id: r.id,
     numero:              r.fields.numero,
     nombre:              r.fields.nombre              ?? '',
