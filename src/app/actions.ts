@@ -316,7 +316,7 @@ export async function adminLogin(
     const cookieStore = await cookies();
     cookieStore.set(
       'g-session',
-      JSON.stringify({ id: admin.id, usuario: admin.usuario, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
+      JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
