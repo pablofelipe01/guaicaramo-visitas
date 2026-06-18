@@ -19,6 +19,8 @@ import {
   type FinDeSemanaPersona,
   createItem,
   type ItemCreateFields,
+  deletePlacas,
+  deletePersonas,
 } from '@/lib/airtable';
 import { isAllowed } from '@/lib/rate-limit';
 
@@ -77,6 +79,10 @@ export async function submitVisitorRequest(
     ? `${session.cedula} - ${session.nombre || session.usuario}`.trim().replace(/^-\s*/, '')
     : undefined;
   const adminId = session?.id ?? undefined;
+
+  // IDs de registros ya creados, para poder limpiarlos si algo falla a mitad
+  // y evitar huérfanos/duplicados al reintentar.
+  const created = { placas: [] as string[], personas: [] as string[] };
 
   try {
     /*
@@ -143,19 +149,25 @@ export async function submitVisitorRequest(
         }),
       ];
 
-      const resultados = await Promise.all(solicitudes);
-      console.log('[submitVisitorRequest] Resultados:', resultados);
+      const [placaResult, ...acompananteResults] = await Promise.all(solicitudes);
+      console.log('[submitVisitorRequest] Resultados:', [placaResult, ...acompananteResults]);
 
-      if (resultados.some(r => !r)) {
+      // Registrar lo que sí se creó para poder limpiarlo si algo falló.
+      if (placaResult) created.placas.push(placaResult);
+      acompananteResults.forEach(id => { if (id) created.personas.push(id); });
+
+      if (!placaResult || acompananteResults.some(r => !r)) {
         throw new Error('Falla al crear uno o más registros en Airtable');
       }
 
       // Vincular acompañantes al registro de Placas
-      const placaId = resultados[0]!;
-      const acompananteIds = (resultados.slice(1) as (string | null)[]).filter((id): id is string => id !== null);
+      const acompananteIds = acompananteResults as string[];
       if (acompananteIds.length > 0) {
-        console.log('[submitVisitorRequest] Vinculando acompañantes a placa:', placaId, acompananteIds);
-        await updatePlacaAcompanantes(placaId, acompananteIds);
+        console.log('[submitVisitorRequest] Vinculando acompañantes a placa:', placaResult, acompananteIds);
+        const linked = await updatePlacaAcompanantes(placaResult, acompananteIds);
+        if (!linked) {
+          throw new Error('Falla al vincular acompañantes a la placa');
+        }
       }
     } else {
       // ── Peatón → tabla Personas ──────────────────────────────────────────
@@ -190,19 +202,24 @@ export async function submitVisitorRequest(
         }),
       ];
 
-      const resultados = await Promise.all(solicitudes);
-      console.log('[submitVisitorRequest] Resultados:', resultados);
+      const [personaResult, ...acompananteResults] = await Promise.all(solicitudes);
+      console.log('[submitVisitorRequest] Resultados:', [personaResult, ...acompananteResults]);
 
-      if (resultados.some(r => !r)) {
+      if (personaResult) created.personas.push(personaResult);
+      acompananteResults.forEach(id => { if (id) created.personas.push(id); });
+
+      if (!personaResult || acompananteResults.some(r => !r)) {
         throw new Error('Falla al crear uno o más registros en Airtable');
       }
 
       // Vincular acompañantes al registro principal de la persona
-      const personaId = resultados[0]!;
-      const acompananteIds = (resultados.slice(1) as (string | null)[]).filter((id): id is string => id !== null);
+      const acompananteIds = acompananteResults as string[];
       if (acompananteIds.length > 0) {
-        console.log('[submitVisitorRequest] Vinculando acompañantes a persona:', personaId, acompananteIds);
-        await updatePersonaAcompanantes(personaId, acompananteIds);
+        console.log('[submitVisitorRequest] Vinculando acompañantes a persona:', personaResult, acompananteIds);
+        const linked = await updatePersonaAcompanantes(personaResult, acompananteIds);
+        if (!linked) {
+          throw new Error('Falla al vincular acompañantes a la persona');
+        }
       }
     }
 
@@ -233,11 +250,26 @@ export async function submitVisitorRequest(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[submitVisitorRequest] Error:', msg, err);
+
+    // Limpiar registros huérfanos creados antes de la falla, para evitar
+    // duplicados o registros sin vínculo cuando el usuario reintenta.
+    if (created.placas.length || created.personas.length) {
+      console.warn('[submitVisitorRequest] Limpiando huérfanos:', created);
+      try {
+        await Promise.all([
+          created.placas.length   ? deletePlacas(created.placas)     : Promise.resolve(),
+          created.personas.length ? deletePersonas(created.personas) : Promise.resolve(),
+        ]);
+      } catch (cleanupErr) {
+        console.error('[submitVisitorRequest] Falla al limpiar huérfanos:', cleanupErr);
+      }
+    }
+
     // Exponer mensajes de configuración faltante (no contienen datos sensibles)
     if (msg.startsWith('Falta variable de entorno')) {
       return { status: 'ERROR', message: `Configuración incompleta: ${msg}` };
     }
-    if (msg.includes('Falla al crear')) {
+    if (msg.includes('Falla al')) {
       return { status: 'ERROR', message: 'Error al crear registros en Airtable. Verifica los datos e intenta de nuevo.' };
     }
     return { status: 'ERROR', message: 'Error de conexión. Intenta de nuevo.' };

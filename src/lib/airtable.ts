@@ -34,6 +34,70 @@ function authHeaders() {
   };
 }
 
+// Referencia al fetch nativo para usar dentro del wrapper de reintento sin recursión.
+const nativeFetch = fetch;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * fetch con reintento ante rate limit (429) y errores transitorios del servidor (5xx).
+ * Airtable limita a ~5 req/seg por base; los registros de visita disparan varias
+ * escrituras en paralelo, por lo que sin reintento se pierden vínculos "a veces".
+ * Respeta el header `Retry-After` cuando viene; si no, usa backoff exponencial con jitter.
+ * No reintenta ante 4xx (excepto 429) porque son fallas del cliente, no transitorias.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  attempts = 4,
+): Promise<Response> {
+  let res: Response | undefined;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      res = await nativeFetch(url, init);
+    } catch (networkErr) {
+      // Error de red (DNS, conexión perdida) — reintentar si quedan intentos.
+      if (i === attempts - 1) throw networkErr;
+      await sleep(Math.min(2 ** i * 500, 4000) + Math.floor(Math.random() * 250));
+      continue;
+    }
+    if (res.ok) return res;
+    if (res.status !== 429 && res.status < 500) return res; // 4xx no transitorio
+    if (i === attempts - 1) return res;
+    const retryAfter = Number(res.headers.get('Retry-After'));
+    const backoff = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : Math.min(2 ** i * 500, 4000) + Math.floor(Math.random() * 250);
+    await sleep(backoff);
+  }
+  return res!;
+}
+
+/** Elimina registros en lotes de 10 (límite de Airtable). */
+async function deleteRecords(table: string, ids: string[]): Promise<void> {
+  for (let i = 0; i < ids.length; i += 10) {
+    const batch = ids.slice(i, i + 10);
+    const q = new URLSearchParams();
+    batch.forEach(id => q.append('records[]', id));
+    await fetchWithRetry(`${apiUrl(table)}?${q.toString()}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+  }
+}
+
+/** Elimina solicitudes de Placas (usado para limpiar registros huérfanos). */
+export async function deletePlacas(ids: string[]): Promise<void> {
+  return deleteRecords(getTable('PLACAS'), ids);
+}
+
+/** Elimina registros de Personas (usado para limpiar registros huérfanos). */
+export async function deletePersonas(ids: string[]): Promise<void> {
+  return deleteRecords(getTable('PERSONAS'), ids);
+}
+
 /** Pagina a través de todos los registros de una tabla sin límite artificial. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchAllRecords(table: string, params: URLSearchParams): Promise<any[]> {
@@ -43,11 +107,15 @@ async function fetchAllRecords(table: string, params: URLSearchParams): Promise<
   do {
     const q = new URLSearchParams(params);
     if (offset) q.set('offset', offset);
-    const res = await fetch(`${apiUrl(table)}?${q.toString()}`, {
+    const res = await fetchWithRetry(`${apiUrl(table)}?${q.toString()}`, {
       headers: authHeaders(),
       cache: 'no-store',
     });
-    if (!res.ok) break;
+    // No truncar en silencio: si una página falla tras reintentos, devolver una
+    // lista parcial ocultaría visitantes registrados. Mejor fallar de forma visible.
+    if (!res.ok) {
+      throw new Error(`Error ${res.status} al leer "${table}" desde Airtable`);
+    }
     const data = await res.json();
     all.push(...(data.records ?? []));
     offset = data.offset;
@@ -161,7 +229,7 @@ export interface RegistroRecord {
 
 export async function findPlacaByPlaca(placa: string): Promise<PlacaRecord | null> {
   const formula = encodeURIComponent(`{placa}="${placa.toUpperCase()}"`);
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${apiUrl(getTable('PLACAS'))}?filterByFormula=${formula}&maxRecords=1`,
     { headers: authHeaders(), cache: 'no-store' },
   );
@@ -213,7 +281,7 @@ export async function createPlacaSolicitud(fields: {
       },
     }],
   };
-  const res = await fetch(apiUrl(getTable('PLACAS')), {
+  const res = await fetchWithRetry(apiUrl(getTable('PLACAS')), {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
@@ -243,7 +311,7 @@ export async function createPersona(fields: PersonaCreateFields): Promise<string
       },
     }],
   };
-  const res = await fetch(apiUrl(getTable('PERSONAS')), {
+  const res = await fetchWithRetry(apiUrl(getTable('PERSONAS')), {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
@@ -258,7 +326,7 @@ export async function createPersona(fields: PersonaCreateFields): Promise<string
    ───────────────────────────────────────────────────────── */
 
 export async function createRegistro(fields: RegistroCreateFields): Promise<string | null> {
-  const res = await fetch(apiUrl(getTable('REGISTROS')), {
+  const res = await fetchWithRetry(apiUrl(getTable('REGISTROS')), {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ records: [{ fields }] }),
@@ -278,7 +346,7 @@ export async function findAdminByUsuario(usuario: string): Promise<AdminRecord |
   // Escape double quotes in the usuario value to prevent formula injection
   const safe = usuario.replace(/"/g, '\\"');
   const formula = encodeURIComponent(`{usuario}="${safe}"`);
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${apiUrl(getTable('ADMINISTRADORES'))}?filterByFormula=${formula}&maxRecords=1`,
     { headers: authHeaders(), cache: 'no-store' },
   );
@@ -303,7 +371,7 @@ export async function findAdminByUsuario(usuario: string): Promise<AdminRecord |
 export async function findAdminByCedula(cedula: string): Promise<AdminRecord | null> {
   const safe = cedula.replace(/"/g, '\\"');
   const formula = encodeURIComponent(`{cedula}="${safe}"`);
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${apiUrl(getTable('ADMINISTRADORES'))}?filterByFormula=${formula}&maxRecords=1`,
     { headers: authHeaders(), cache: 'no-store' },
   );
@@ -330,7 +398,7 @@ export async function findAdminByCedula(cedula: string): Promise<AdminRecord | n
  * Solo se llama cuando el admin no tiene contraseña registrada todavía.
  */
 export async function updateAdminPassword(id: string, hashedPassword: string): Promise<boolean> {
-  const res = await fetch(`${apiUrl(getTable('ADMINISTRADORES'))}/${id}`, {
+  const res = await fetchWithRetry(`${apiUrl(getTable('ADMINISTRADORES'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify({ fields: { contraseña: hashedPassword } }),
@@ -387,7 +455,7 @@ export async function updateRegistroStatus(
   if (extra?.supervisor)     fields.supervisor = extra.supervisor;
   if (extra?.rejected_time)  fields.rejected_time = extra.rejected_time;
 
-  const res = await fetch(`${apiUrl(getTable('REGISTROS'))}/${id}`, {
+  const res = await fetchWithRetry(`${apiUrl(getTable('REGISTROS'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify({ fields }),
@@ -445,7 +513,7 @@ export async function updatePlacaAutorizado(
     fields.autoriza_visita = '';
     fields.fecha_autorizado = null;
   }
-  const res = await fetch(`${apiUrl(getTable('PLACAS'))}/${id}`, {
+  const res = await fetchWithRetry(`${apiUrl(getTable('PLACAS'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify({ fields }),
@@ -458,7 +526,7 @@ export async function updatePersonaAcompanantes(
   id: string,
   acompananteIds: string[],
 ): Promise<boolean> {
-  const res = await fetch(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
+  const res = await fetchWithRetry(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify({ fields: { Acompañantes: acompananteIds } }),
@@ -473,7 +541,7 @@ export async function updatePlacaAcompanantes(
   id: string,
   acompanianteIds: string[],
 ): Promise<boolean> {
-  const res = await fetch(`${apiUrl(getTable('PLACAS'))}/${id}`, {
+  const res = await fetchWithRetry(`${apiUrl(getTable('PLACAS'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify({
@@ -536,7 +604,7 @@ export async function updatePersonaAutorizado(
     fields.autoriza_visita = '';
     fields.fecha_autorizado = null;
   }
-  const res = await fetch(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
+  const res = await fetchWithRetry(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify({ fields }),
@@ -559,7 +627,7 @@ export async function getAdmins(): Promise<AdminListRecord[]> {
     maxRecords: '200',
     'fields[]': 'areas',
   });
-  const res = await fetch(
+  const res = await fetchWithRetry(
     `${apiUrl(getTable('ADMINISTRADORES'))}?${params.toString()}`,
     { headers: authHeaders(), cache: 'no-store' },
   );
@@ -603,7 +671,7 @@ export async function createFinDeSemanaRecords(
         return { fields };
       }),
     };
-    const res = await fetch(apiUrl(getTable('FINDE_SEMANA')), {
+    const res = await fetchWithRetry(apiUrl(getTable('FINDE_SEMANA')), {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(body),
@@ -698,7 +766,7 @@ export async function createItem(
   if (fields.fecha_salida)  f.fecha_salida  = fields.fecha_salida;
   if (fields.notas)         f.notas         = fields.notas;
 
-  const res = await fetch(apiUrl(getTable('ITEMS')), {
+  const res = await fetchWithRetry(apiUrl(getTable('ITEMS')), {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ records: [{ fields: f }] }),
