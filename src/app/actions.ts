@@ -23,6 +23,7 @@ import {
   deletePersonas,
 } from '@/lib/airtable';
 import { isAllowed } from '@/lib/rate-limit';
+import { SESSION_COOKIE, SESSION_MAX_AGE } from '@/lib/session';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -42,6 +43,7 @@ async function getClientIp(): Promise<string> {
 
 export type VisitorResult =
   | { status: 'PENDIENTE' }
+  | { status: 'SESSION_EXPIRED' }
   | { status: 'ERROR'; message: string };
 
 /*
@@ -57,6 +59,7 @@ export async function submitVisitorRequest(
   acompanantes?: { cedula: string; nombre: string }[],
   tipoTransporte?: 'vehiculo' | 'peaton',
   fechaVencimiento?: string,
+  requireSession?: boolean,
 ): Promise<VisitorResult> {
   // Rate limit: máx. 5 solicitudes por IP cada 60 segundos
   const ip = await getClientIp();
@@ -79,6 +82,14 @@ export async function submitVisitorRequest(
     ? `${session.cedula} - ${session.nombre || session.usuario}`.trim().replace(/^-\s*/, '')
     : undefined;
   const adminId = session?.id ?? undefined;
+
+  // Si el registro proviene de un contexto autenticado (dashboard) pero la sesión
+  // expiró (cookie vencida con la pestaña abierta), NO crear un registro huérfano
+  // sin administrador vinculado: pedir re-login. El proxy renueva la sesión mientras
+  // el usuario esté activo, así que esto solo ocurre tras inactividad real.
+  if (requireSession && !session) {
+    return { status: 'SESSION_EXPIRED' };
+  }
 
   // IDs de registros ya creados, para poder limpiarlos si algo falla a mitad
   // y evitar huérfanos/duplicados al reintentar.
@@ -347,14 +358,14 @@ export async function adminLogin(
 
     const cookieStore = await cookies();
     cookieStore.set(
-      'g-session',
+      SESSION_COOKIE,
       JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 60 * 8, // 8 horas
+        maxAge: SESSION_MAX_AGE,
       },
     );
 
@@ -401,14 +412,14 @@ export async function setAdminPassword(
     // Iniciar sesión automáticamente tras crear la contraseña
     const cookieStore = await cookies();
     cookieStore.set(
-      'g-session',
+      SESSION_COOKIE,
       JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 60 * 8,
+        maxAge: SESSION_MAX_AGE,
       },
     );
 
@@ -447,14 +458,14 @@ export async function adminLoginCedula(
 
     const cookieStore = await cookies();
     cookieStore.set(
-      'g-session',
+      SESSION_COOKIE,
       JSON.stringify({ id: admin.id, usuario: admin.usuario, cedula: admin.cedula, nombre: admin.nombre, tipo: admin.tipo ?? 'Invita', areas: admin.areas ?? [] }),
       {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 60 * 8,
+        maxAge: SESSION_MAX_AGE,
       },
     );
 
@@ -474,7 +485,7 @@ export type RegistroActionResult =
 async function getSession(): Promise<{ id: string; usuario: string; cedula: string; nombre: string; tipo: string; areas: string[] } | null> {
   try {
     const cookieStore = await cookies();
-    const raw = cookieStore.get('g-session')?.value;
+    const raw = cookieStore.get(SESSION_COOKIE)?.value;
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { id?: string; usuario?: string; cedula?: string; nombre?: string; tipo?: string; areas?: string[] };
     // Cookie must have been set by our login (has an id field)

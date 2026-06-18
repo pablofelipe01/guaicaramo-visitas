@@ -145,6 +145,7 @@ export default function RegistrarVisitantePanel() {
       const res = await submitVisitorRequest(
         cedula, nombre, placa, motivoVisita, acompanantes, tipoTransporte,
         fechaVencimiento ? `${fechaVencimiento}T17:00` : undefined,
+        true, // requireSession: este formulario siempre corre autenticado
       );
       console.log('[handleSubmit] Respuesta de servidor:', res);
       setResult(res);
@@ -202,6 +203,22 @@ export default function RegistrarVisitantePanel() {
             {tipoTransporte === 'peaton' && <> · <strong>A pie</strong></>}
           </p>
           <button className="btn btn-primary" onClick={reset}>Registrar otra visita</button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Session expired state ── */
+  if (result?.status === 'SESSION_EXPIRED') {
+    return (
+      <div style={{ maxWidth: 680, margin: '0 auto' }}>
+        <div className="db-card db-form-result-pad">
+          <h3 style={{ color: 'var(--g-coral)', marginBottom: 8 }}>Tu sesión expiró</h3>
+          <p style={{ color: 'var(--g-ink-2)', marginBottom: 24 }}>
+            Por seguridad tu sesión se cerró y no se pudo identificar quién registra la visita.
+            Vuelve a iniciar sesión para registrarla — no se creó ningún registro.
+          </p>
+          <a className="btn btn-primary" href="/login">Iniciar sesión</a>
         </div>
       </div>
     );

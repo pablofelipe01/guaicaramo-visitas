@@ -3,6 +3,8 @@
 import { useState, useRef, useTransition } from 'react';
 import type { ItemRecord } from '@/lib/airtable';
 import { submitOrdenSalida } from '@/app/actions';
+import { usePagination } from '@/lib/usePagination';
+import Pagination from './Pagination';
 
 /* -- Icons ----------------------------------------------------------------- */
 
@@ -134,6 +136,9 @@ export default function OrdenesSalidaPanel({ items: initial }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const pagination = usePagination(ordenes, { pageSize: 25, resetKey: ordenes.length });
+  const pageItems = pagination.pageItems;
 
   const { activeTarget, toggle } = useVoice((target, text) => {
     setForm(prev => ({
@@ -374,7 +379,7 @@ export default function OrdenesSalidaPanel({ items: initial }: Props) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {ordenes.map(orden => (
+            {pageItems.map(orden => (
               <div
                 key={orden.id}
                 style={{
@@ -469,6 +474,8 @@ export default function OrdenesSalidaPanel({ items: initial }: Props) {
             ))}
           </div>
         )}
+
+        {ordenes.length > 0 && <Pagination pagination={pagination} label="órdenes" />}
       </div>
     </div>
   );

@@ -4,6 +4,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { RegistroRecord } from '@/lib/airtable';
 import { approveRegistro, rejectRegistro } from '@/app/actions';
+import { usePagination } from '@/lib/usePagination';
+import Pagination from './Pagination';
 
 type View = 'tabla' | 'tarjetas';
 type CategoriaFilter = '' | 'VEHICULO' | 'PEATON' | 'FIN_DE_SEMANA';
@@ -109,6 +111,10 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
   for (const r of registros) {
     if (r.categoria) categoriaCounts[r.categoria] = (categoriaCounts[r.categoria] ?? 0) + 1;
   }
+
+  // Paginación (vuelve a la página 1 al cambiar el filtro)
+  const pagination = usePagination(filtered, { pageSize: 25, resetKey: filterCategoria });
+  const pageItems = pagination.pageItems;
 
   function handleApprove(id: string) {
     setActionError(null);
@@ -216,7 +222,7 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {pageItems.map((r) => (
                   <tr key={r.id}>
                     <td className="db-td-date">{formatDate(r.entry_time)}</td>
                     <td className="db-td-name">{visitorName(r)}</td>
@@ -262,7 +268,7 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
 
           /* ── CARD VIEW ── */
           <div className="db-records-grid">
-            {filtered.map((r) => (
+            {pageItems.map((r) => (
               <div
                 key={r.id}
                 className={`db-record-card db-record-card--${r.status.toLowerCase()}`}
@@ -342,6 +348,8 @@ export default function RegistrosPanel({ registros, tipo }: Props) {
             ))}
           </div>
         )}
+
+        {filtered.length > 0 && <Pagination pagination={pagination} label="registros" />}
       </div>
 
       {/* ── Reject modal ── */}

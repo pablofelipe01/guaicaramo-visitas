@@ -4,12 +4,13 @@ import Image from 'next/image';
 import { getRegistros, getPlacas, getPersonas, getAdmins, getItems, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord } from '@/lib/airtable';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import DashboardContent from './DashboardContent';
+import { SESSION_COOKIE } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
-  const raw = cookieStore.get('g-session')?.value;
+  const raw = cookieStore.get(SESSION_COOKIE)?.value;
 
   if (!raw) redirect('/login');
 

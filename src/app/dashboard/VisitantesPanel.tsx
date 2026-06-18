@@ -4,6 +4,8 @@ import { useState, useTransition, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PlacaRecord, PersonaRecord } from '@/lib/airtable';
 import { authorizePlaca, unauthorizePlaca, authorizePersona, unauthorizePersona, denyPlaca, denyPersona } from '@/app/actions';
+import { usePagination } from '@/lib/usePagination';
+import Pagination from './Pagination';
 
 interface Props {
   placas: PlacaRecord[];
@@ -219,6 +221,10 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
   // Mantiene cada vehículo/cabeza junto a sus acompañantes.
   const ordered = orderByGroup(sorted, companionToHead, headCompanionIds);
 
+  // Paginación (vuelve a la página 1 al cambiar de pestaña o búsqueda)
+  const pagination = usePagination(ordered, { pageSize: 25, resetKey: `${filter}|${term}` });
+  const pageItems = pagination.pageItems;
+
   function handleAuthorize(id: string, visitType: 'vehiculo' | 'persona', authorize: boolean) {
     setActionError(null);
     startTransition(async () => {
@@ -305,7 +311,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
               </tr>
             </thead>
             <tbody>
-              {ordered.map(v => {
+              {pageItems.map(v => {
                 const expired      = isExpired(v.vence);
                 const displayName  = v.tipo === 'vehiculo' ? v.placa    : v.nombre;
                 const displaySub   = v.tipo === 'vehiculo' ? v.conductor : v.cargo;
@@ -448,6 +454,8 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
           </table>
         </div>
       )}
+
+      {filtered.length > 0 && <Pagination pagination={pagination} label="visitantes" />}
 
       {detail && (
         <div className="db-modal-overlay" onClick={() => setDetail(null)}>
