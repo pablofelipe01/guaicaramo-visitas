@@ -7,8 +7,9 @@ import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import VisitantesPanel from './VisitantesPanel';
 import ProgramacionSemanalPanel from './ProgramacionSemanalPanel';
 import OrdenesSalidaPanel from './OrdenesSalidaPanel';
+import ResumenAutorizaPanel from './ResumenAutorizaPanel';
 
-type Tab = 'registros' | 'visitantes' | 'registrar' | 'programacion' | 'ordenes';
+type Tab = 'resumen' | 'registros' | 'visitantes' | 'registrar' | 'programacion' | 'ordenes';
 
 interface Props {
   registros: RegistroRecord[];
@@ -21,8 +22,9 @@ interface Props {
 }
 
 export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items }: Props) {
-  const isPorteria = tipo === 'Porteria';
-  const [tab, setTab] = useState<Tab>('registros');
+  const isPorteria  = tipo === 'Porteria';
+  const isAutoriza  = tipo === 'Autoriza';
+  const [tab, setTab] = useState<Tab>(isAutoriza ? 'resumen' : 'registros');
 
   const visitantesPendientes =
     placas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length +
@@ -60,6 +62,15 @@ export default function DashboardContent({ registros, placas, personas, usuario,
             onClick={() => setTab('registrar')}
           >
             Registrar visitante
+          </button>
+        )}
+        {isAutoriza && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'resumen' ? ' active' : ''}`}
+            onClick={() => setTab('resumen')}
+          >
+            Panel de control
           </button>
         )}
         {tipo === 'Superadmin' && (
@@ -127,6 +138,14 @@ export default function DashboardContent({ registros, placas, personas, usuario,
         </>
       )}
 
+      {tab === 'resumen' && isAutoriza && (
+        <ResumenAutorizaPanel
+          placas={placas}
+          personas={personas}
+          registros={registros}
+          usuario={usuario}
+        />
+      )}
       {tab === 'registrar' && !isPorteria && <RegistrarVisitantePanel />}
       {tab === 'programacion' && tipo === 'Superadmin' && <ProgramacionSemanalPanel />}
       {tab === 'ordenes' && tipo === 'Superadmin' && <OrdenesSalidaPanel items={items} />}
