@@ -144,9 +144,10 @@ function StatusBadge({ status }: { status?: string }) {
   const m: Record<string, { bg: string; fg: string }> = {
     APROBADO:           { bg: '#dcfce7', fg: '#166534' },
     AUTORIZADO:         { bg: '#dcfce7', fg: '#166534' },
-    PENDIENTE:          { bg: '#fef9c3', fg: '#854d0e' },
-    NEGADO:             { bg: '#fee2e2', fg: '#991b1b' },
-    RECHAZADO:          { bg: '#fee2e2', fg: '#991b1b' },
+    PENDIENTE:            { bg: '#fef9c3', fg: '#854d0e' },
+    'PENDIENTE REGISTRO': { bg: '#e0f2fe', fg: '#0369a1' },
+    NEGADO:               { bg: '#fee2e2', fg: '#991b1b' },
+    RECHAZADO:            { bg: '#fee2e2', fg: '#991b1b' },
     SALIDA_SIN_ENTRADA: { bg: '#f3e8ff', fg: '#6b21a8' },
   };
   const s = m[status] ?? { bg: '#f1f5f9', fg: '#64748b' };
@@ -284,7 +285,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
 
   const solCounts = useMemo(() => ({
     todas:       allSolicitudes.length,
-    pendientes:  allSolicitudes.filter(i => !i.data.autorizado && i.data.estado !== 'RECHAZADO').length,
+    pendientes:  allSolicitudes.filter(i => !i.data.autorizado && i.data.estado !== 'RECHAZADO' && i.data.estado !== 'PENDIENTE REGISTRO').length,
     autorizadas: allSolicitudes.filter(i => i.data.autorizado).length,
     rechazadas:  allSolicitudes.filter(i => i.data.estado === 'RECHAZADO').length,
   }), [allSolicitudes]);
@@ -305,7 +306,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
 
   const filteredSolicitudes = useMemo(() => {
     let items = allSolicitudes;
-    if (filtroSol === 'pendientes')  items = items.filter(i => !i.data.autorizado && i.data.estado !== 'RECHAZADO');
+    if (filtroSol === 'pendientes')  items = items.filter(i => !i.data.autorizado && i.data.estado !== 'RECHAZADO' && i.data.estado !== 'PENDIENTE REGISTRO');
     if (filtroSol === 'autorizadas') items = items.filter(i => i.data.autorizado);
     if (filtroSol === 'rechazadas')  items = items.filter(i => i.data.estado === 'RECHAZADO');
     if (searchSol) {
@@ -402,7 +403,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
     if (detail.kind === 'placa') {
       const p = detail.data;
       const estado = p.autorizado ? 'AUTORIZADO' : (p.estado ?? 'PENDIENTE');
-      const isPend = !p.autorizado && p.estado !== 'RECHAZADO';
+      const isPend = !p.autorizado && p.estado !== 'RECHAZADO' && p.estado !== 'PENDIENTE REGISTRO';
       const relRegs = getRegistrosForPlaca(p.id);
       const acomps  = (p.acompañanteIds ?? []).map(id => getPersonaById(id)).filter(Boolean) as PersonaRecord[];
       return (
@@ -456,7 +457,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
     if (detail.kind === 'persona') {
       const p = detail.data;
       const estado = p.autorizado ? 'AUTORIZADO' : (p.estado ?? 'PENDIENTE');
-      const isPend = !p.autorizado && p.estado !== 'RECHAZADO';
+      const isPend = !p.autorizado && p.estado !== 'RECHAZADO' && p.estado !== 'PENDIENTE REGISTRO';
       const relRegs = getRegistrosForPersona(p.id);
       return (
         <>
@@ -737,7 +738,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
                   {filteredSolicitudes.length === 0 ? <EmptyRow cols={10} /> : filteredSolicitudes.map(item => {
                     const isP   = item.kind === 'placa';
                     const d     = item.data;
-                    const pend  = !d.autorizado && d.estado !== 'RECHAZADO';
+                    const pend  = !d.autorizado && d.estado !== 'RECHAZADO' && d.estado !== 'PENDIENTE REGISTRO';
                     const estado = d.autorizado ? 'AUTORIZADO' : (d.estado ?? 'PENDIENTE');
                     const label  = isP ? (d as PlacaRecord).placa : (d as PersonaRecord).nombre;
                     const sub    = isP ? (d as PlacaRecord).conductor : (d as PersonaRecord).cargo;

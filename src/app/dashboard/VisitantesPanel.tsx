@@ -22,7 +22,7 @@ type Visitante = {
   cargo?: string;
   cedula?: string;
   autorizado: boolean;
-  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO';
   vence?: string;
   responsable_visita?: string;
   autoriza_visita?: string;
@@ -123,7 +123,7 @@ function isExpired(vence?: string) {
   return new Date(normalized) < new Date();
 }
 
-type Filter = 'todos' | 'pendientes' | 'autorizados' | 'rechazados' | 'vencidos';
+type Filter = 'todos' | 'pendientes' | 'autorizados' | 'rechazados' | 'vencidos' | 'pendiente-registro';
 
 export default function VisitantesPanel({ placas, personas, tipo }: Props) {
   const router = useRouter();
@@ -188,18 +188,20 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
   }
 
   const counts = {
-    todos:       visitantes.length,
-    pendientes:  visitantes.filter(v => !v.autorizado && v.estado !== 'RECHAZADO').length,
-    autorizados: visitantes.filter(v => v.autorizado && !isExpired(v.vence)).length,
-    rechazados:  visitantes.filter(v => v.estado === 'RECHAZADO').length,
-    vencidos:    visitantes.filter(v => isExpired(v.vence)).length,
+    todos:              visitantes.length,
+    pendientes:         visitantes.filter(v => !v.autorizado && v.estado !== 'RECHAZADO' && v.estado !== 'PENDIENTE REGISTRO').length,
+    autorizados:        visitantes.filter(v => v.autorizado && !isExpired(v.vence)).length,
+    rechazados:         visitantes.filter(v => v.estado === 'RECHAZADO').length,
+    vencidos:           visitantes.filter(v => isExpired(v.vence)).length,
+    'pendiente-registro': visitantes.filter(v => v.estado === 'PENDIENTE REGISTRO').length,
   };
 
   const byTab = visitantes.filter(v => {
-    if (filter === 'pendientes')  return !v.autorizado && v.estado !== 'RECHAZADO';
-    if (filter === 'autorizados') return v.autorizado && !isExpired(v.vence);
-    if (filter === 'rechazados')  return v.estado === 'RECHAZADO';
-    if (filter === 'vencidos')    return isExpired(v.vence);
+    if (filter === 'pendientes')          return !v.autorizado && v.estado !== 'RECHAZADO' && v.estado !== 'PENDIENTE REGISTRO';
+    if (filter === 'autorizados')         return v.autorizado && !isExpired(v.vence);
+    if (filter === 'rechazados')          return v.estado === 'RECHAZADO';
+    if (filter === 'vencidos')            return isExpired(v.vence);
+    if (filter === 'pendiente-registro')  return v.estado === 'PENDIENTE REGISTRO';
     return true;
   });
 
@@ -245,12 +247,15 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
     });
   }
 
+  const isSuperadmin = tipo === 'Superadmin';
+
   const FILTERS: { key: Filter; label: string; count: number }[] = [
     { key: 'todos',       label: 'Todos',       count: counts.todos       },
     { key: 'pendientes',  label: 'Pendientes',  count: counts.pendientes  },
     { key: 'autorizados', label: 'Autorizados', count: counts.autorizados },
     { key: 'rechazados',  label: 'Rechazados',  count: counts.rechazados  },
     { key: 'vencidos',    label: 'Vencidos',    count: counts.vencidos    },
+    ...(isSuperadmin ? [{ key: 'pendiente-registro' as Filter, label: 'Pendiente registro', count: counts['pendiente-registro'] }] : []),
   ];
 
   return (

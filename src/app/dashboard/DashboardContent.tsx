@@ -31,9 +31,19 @@ export default function DashboardContent({ registros, placas, personas, usuario,
   const isAutoriza  = tipo === 'Autoriza';
   const [tab, setTab] = useState<Tab>(isAutoriza ? 'resumen' : 'registros');
 
-  const visitantesPendientes =
-    placas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length +
-    personas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length;
+  const isSuperadmin = tipo === 'Superadmin';
+
+  const pendientesCount =
+    placas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO' && p.estado !== 'PENDIENTE REGISTRO').length +
+    personas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO' && p.estado !== 'PENDIENTE REGISTRO').length;
+
+  const pendienteRegistroCount =
+    placas.filter(p => p.estado === 'PENDIENTE REGISTRO').length +
+    personas.filter(p => p.estado === 'PENDIENTE REGISTRO').length;
+
+  const visitantesPendientes = isSuperadmin
+    ? pendientesCount + pendienteRegistroCount
+    : pendientesCount;
 
   return (
     <>
@@ -56,9 +66,14 @@ export default function DashboardContent({ registros, placas, personas, usuario,
         >
           Visitantes
           <span className="db-tab-count">{placas.length + personas.length}</span>
-          {visitantesPendientes > 0 && (
-            <span className="db-tab-alert" title={`${visitantesPendientes} pendiente(s) por autorizar`}>
-              {visitantesPendientes} pendiente{visitantesPendientes !== 1 ? 's' : ''}
+          {pendientesCount > 0 && (
+            <span className="db-tab-alert" title={`${pendientesCount} pendiente(s) por autorizar`}>
+              {pendientesCount} pendiente{pendientesCount !== 1 ? 's' : ''}
+            </span>
+          )}
+          {isSuperadmin && pendienteRegistroCount > 0 && (
+            <span className="db-tab-alert" style={{ background: '#0369a1' }} title={`${pendienteRegistroCount} pendiente(s) de registro`}>
+              {pendienteRegistroCount} p. registro
             </span>
           )}
         </button>
@@ -139,8 +154,14 @@ export default function DashboardContent({ registros, placas, personas, usuario,
             </div>
             <div className="db-stat-card stat-pendiente">
               <span className="db-stat-label">Pendientes</span>
-              <span className="db-stat-value">{placas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length + personas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length}</span>
+              <span className="db-stat-value">{pendientesCount}</span>
             </div>
+            {isSuperadmin && (
+              <div className="db-stat-card" style={{ background: '#e0f2fe', borderColor: '#bae6fd' }}>
+                <span className="db-stat-label" style={{ color: '#0369a1' }}>Pendiente registro</span>
+                <span className="db-stat-value" style={{ color: '#0369a1' }}>{pendienteRegistroCount}</span>
+              </div>
+            )}
             <div className="db-stat-card stat-aprobado">
               <span className="db-stat-label">Autorizados</span>
               <span className="db-stat-value">{placas.filter(p => p.autorizado).length + personas.filter(p => p.autorizado).length}</span>

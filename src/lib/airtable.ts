@@ -133,7 +133,7 @@ export interface PlacaRecord {
   cedula: string;
   conductor: string;
   autorizado: boolean;
-  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO';
   vence?: string;   // ISO date "YYYY-MM-DD"
   notas?: string;
   adminIds?: string[];  // linked Administradores record IDs
@@ -177,7 +177,7 @@ export interface PersonaRecord {
   cedula: string;
   nombre: string;
   autorizado: boolean;
-  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO';
   vence?: string;
   cargo?: string;
   notas?: string;
@@ -505,7 +505,7 @@ export async function updatePlacaAutorizado(
   id: string,
   autorizado: boolean,
   autorizadoPor?: string,
-  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO',
+  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO',
 ): Promise<boolean> {
   const estado = estadoOverride ?? (autorizado ? 'AUTORIZADO' : 'PENDIENTE');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -596,7 +596,7 @@ export async function updatePersonaAutorizado(
   id: string,
   autorizado: boolean,
   autorizadoPor?: string,
-  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO',
+  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO',
 ): Promise<boolean> {
   const estado = estadoOverride ?? (autorizado ? 'AUTORIZADO' : 'PENDIENTE');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -764,7 +764,7 @@ export interface FinDeSemanaRecord {
   fecha_inicio?: string;
   fecha_fin?: string;
   resumen?: string;
-  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO';
   nodo_origen?: string;
   resultado_notificado?: boolean;
   motivo_visita?: string;
