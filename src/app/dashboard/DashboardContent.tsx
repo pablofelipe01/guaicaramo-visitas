@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import PushSubscriber from '@/components/PushSubscriber';
+import NotificationBell from '@/components/NotificationBell';
 import type { RegistroRecord, PlacaRecord, PersonaRecord, ItemRecord, FinDeSemanaRecord, AdminFullRecord } from '@/lib/airtable';
 import RegistrosPanel from './RegistrosPanel';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
@@ -36,7 +36,11 @@ export default function DashboardContent({ registros, placas, personas, usuario,
 
   return (
     <>
-      {(isAutoriza || tipo === 'Superadmin') && <PushSubscriber />}
+      {(isAutoriza || tipo === 'Superadmin') && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <NotificationBell />
+        </div>
+      )}
 
       {/* Tab switcher */}
       <div className="db-tabs" style={{ marginBottom: 24 }}>
