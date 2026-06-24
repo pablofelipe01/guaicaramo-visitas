@@ -142,6 +142,8 @@ export interface PlacaRecord {
   fecha_autorizado?: string;    // ISO datetime en que se autorizó
   creada?: string;              // ISO datetime de creación del registro
   acompañanteIds?: string[];  // linked Personas record IDs (acompañantes en el vehículo)
+  nodo_origen?: string;         // portería desde donde se reportó el intento
+  ultimo_intento?: string;      // ISO datetime del último intento de ingreso
 }
 
 export interface RegistroCreateFields {
@@ -185,6 +187,8 @@ export interface PersonaRecord {
   fecha_autorizado?: string;    // ISO datetime en que se autorizó
   creada?: string;              // ISO datetime de creación del registro
   acompañanteIds?: string[];
+  nodo_origen?: string;         // portería desde donde se reportó el intento
+  ultimo_intento?: string;      // ISO datetime del último intento de ingreso
 }
 
 export interface AdminRecord {
@@ -821,6 +825,123 @@ export async function getAdminsAll(): Promise<AdminFullRecord[]> {
     areas: r.fields.areas ?? [],
   }));
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Personas / Placas — lectura por ID de registro
+   ───────────────────────────────────────────────────────── */
+
+/** Devuelve un registro de Personas por su ID de Airtable. */
+export async function getPersonaById(id: string): Promise<PersonaRecord | null> {
+  const res = await fetchWithRetry(
+    `${apiUrl(getTable('PERSONAS'))}/${id}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r: any = await res.json();
+  return {
+    id: r.id,
+    cedula:          r.fields.cedula          ?? '',
+    nombre:          r.fields.nombre          ?? '',
+    autorizado:      r.fields.autorizado      === true,
+    estado:          r.fields.estado          ?? undefined,
+    vence:           r.fields.vence,
+    cargo:           r.fields.cargo,
+    notas:           r.fields.notas,
+    adminIds:        r.fields.Administradores ?? [],
+    responsable_visita: r.fields.responsable_visita,
+    autoriza_visita:    r.fields.autoriza_visita,
+    fecha_autorizado:   r.fields.fecha_autorizado,
+    creada:             r.fields.Creada,
+    acompañanteIds:  r.fields['Acompañantes'] ?? [],
+    nodo_origen:     r.fields.nodo_origen,
+    ultimo_intento:  r.fields.ultimo_intento,
+  };
+}
+
+/** Devuelve un registro de Placas por su ID de Airtable. */
+export async function getPlacaById(id: string): Promise<PlacaRecord | null> {
+  const res = await fetchWithRetry(
+    `${apiUrl(getTable('PLACAS'))}/${id}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r: any = await res.json();
+  return {
+    id: r.id,
+    placa:      r.fields.placa      ?? '',
+    cedula:     r.fields.cedula     ?? '',
+    conductor:  r.fields.conductor  ?? '',
+    autorizado: r.fields.autorizado === true,
+    estado:     r.fields.estado     ?? undefined,
+    vence:      r.fields.vence,
+    notas:      r.fields.notas,
+    adminIds:   r.fields.Administradores ?? [],
+    responsable_visita: r.fields.responsable_visita,
+    autoriza_visita:    r.fields.autoriza_visita,
+    fecha_autorizado:   r.fields.fecha_autorizado,
+    creada:             r.fields.Creada,
+    acompañanteIds: r.fields.Acompañantes ?? [],
+    nodo_origen:    r.fields.nodo_origen,
+    ultimo_intento: r.fields.ultimo_intento,
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Administradores — push subscriptions (Web Push)
+   ───────────────────────────────────────────────────────── */
+
+export interface AdminPushRecord {
+  id: string;
+  nombre: string;
+  tipo: string;
+  push_subscription: string | null; // PushSubscription serializada como JSON
+}
+
+/**
+ * Devuelve los admins con tipo Autoriza o Superadmin junto con su push_subscription.
+ * Solo incluye registros donde el campo push_subscription no esté vacío.
+ */
+export async function getAdminsAutorizaConPush(): Promise<AdminPushRecord[]> {
+  const params = new URLSearchParams({
+    filterByFormula: 'OR({tipo}="Autoriza",{tipo}="Superadmin")',
+    maxRecords: '50',
+  });
+  params.append('fields[]', 'nombre');
+  params.append('fields[]', 'tipo');
+  params.append('fields[]', 'push_subscription');
+  const res = await fetchWithRetry(
+    `${apiUrl(getTable('ADMINISTRADORES'))}?${params.toString()}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.records ?? []).map((r: any): AdminPushRecord => ({
+    id: r.id,
+    nombre: r.fields.nombre ?? '',
+    tipo: r.fields.tipo ?? '',
+    push_subscription: r.fields.push_subscription ?? null,
+  }));
+}
+
+/** Guarda (o elimina) la push_subscription de un administrador. */
+export async function updateAdminPushSubscription(
+  id: string,
+  subscription: string | null,
+): Promise<boolean> {
+  const res = await fetchWithRetry(`${apiUrl(getTable('ADMINISTRADORES'))}/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ fields: { push_subscription: subscription } }),
+  });
+  return res.ok;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Items (Órdenes de salida)
+   ───────────────────────────────────────────────────────── */
 
 /** Crea una nueva orden de salida en la tabla Items. */
 export async function createItem(
