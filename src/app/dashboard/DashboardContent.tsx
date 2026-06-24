@@ -36,11 +36,7 @@ export default function DashboardContent({ registros, placas, personas, usuario,
 
   return (
     <>
-      {(isAutoriza || tipo === 'Superadmin') && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-          <NotificationBell />
-        </div>
-      )}
+      {(isAutoriza || tipo === 'Superadmin') && <NotificationBell />}
 
       {/* Tab switcher */}
       <div className="db-tabs" style={{ marginBottom: 24 }}>
