@@ -748,6 +748,80 @@ export async function getItems(): Promise<ItemRecord[]> {
   }));
 }
 
+/* ─────────────────────────────────────────────────────────────
+   FinDeSemana — lectura
+   ───────────────────────────────────────────────────────── */
+
+export interface FinDeSemanaRecord {
+  id: string;
+  cedula: string;
+  nombre: string;
+  area?: string;
+  fecha_inicio?: string;
+  fecha_fin?: string;
+  resumen?: string;
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
+  nodo_origen?: string;
+  resultado_notificado?: boolean;
+  motivo_visita?: string;
+}
+
+export async function getFinDeSemana(): Promise<FinDeSemanaRecord[]> {
+  const params = new URLSearchParams({
+    'sort[0][field]': 'fecha_inicio',
+    'sort[0][direction]': 'desc',
+  });
+  const records = await fetchAllRecords(getTable('FINDE_SEMANA'), params);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return records.map((r: any): FinDeSemanaRecord => ({
+    id: r.id,
+    cedula: r.fields.cedula ?? '',
+    nombre: r.fields.nombre ?? '',
+    area: r.fields.area,
+    fecha_inicio: r.fields.fecha_inicio,
+    fecha_fin: r.fields.fecha_fin,
+    resumen: r.fields.resumen,
+    estado: r.fields.estado,
+    nodo_origen: r.fields.nodo_origen,
+    resultado_notificado: r.fields.resultado_notificado === true,
+    motivo_visita: r.fields.motivo_visita,
+  }));
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Administradores — lista completa para panel de control
+   ───────────────────────────────────────────────────────── */
+
+export interface AdminFullRecord {
+  id: string;
+  nombre: string;
+  cedula: string;
+  tipo?: string;
+  areas?: string[];
+}
+
+export async function getAdminsAll(): Promise<AdminFullRecord[]> {
+  const params = new URLSearchParams({ maxRecords: '200' });
+  params.append('fields[]', 'nombre');
+  params.append('fields[]', 'cedula');
+  params.append('fields[]', 'tipo');
+  params.append('fields[]', 'areas');
+  const res = await fetchWithRetry(
+    `${apiUrl(getTable('ADMINISTRADORES'))}?${params.toString()}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.records ?? []).map((r: any): AdminFullRecord => ({
+    id: r.id,
+    nombre: r.fields.nombre ?? '',
+    cedula: r.fields.cedula ?? '',
+    tipo: r.fields.tipo,
+    areas: r.fields.areas ?? [],
+  }));
+}
+
 /** Crea una nueva orden de salida en la tabla Items. */
 export async function createItem(
   fields: ItemCreateFields,

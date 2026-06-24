@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
-import { getRegistros, getPlacas, getPersonas, getAdmins, getItems, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord } from '@/lib/airtable';
+import { getRegistros, getPlacas, getPersonas, getAdmins, getItems, getFinDeSemana, getAdminsAll, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord, type FinDeSemanaRecord, type AdminFullRecord } from '@/lib/airtable';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import DashboardContent from './DashboardContent';
 import { SESSION_COOKIE } from '@/lib/session';
@@ -33,14 +33,15 @@ export default async function DashboardPage() {
 
   // Solo carga datos si el usuario puede ver el dashboard
   let placas: PlacaRecord[] = [], personas: PersonaRecord[] = [], registros: RegistroRecord[] = [], items: ItemRecord[] = [];
+  let finDeSemana: FinDeSemanaRecord[] = [], admins: AdminFullRecord[] = [];
   if (canViewDashboard) {
     [registros, placas, personas] = await Promise.all([getRegistros(), getPlacas(), getPersonas()]);
 
     if (isSuperadmin) {
       try {
-        items = await getItems();
+        [items, finDeSemana, admins] = await Promise.all([getItems(), getFinDeSemana(), getAdminsAll()]);
       } catch {
-        // AIRTABLE_TABLE_ITEMS not configured yet — panel will show empty list
+        // tables may not be configured yet — panel will show empty lists
       }
     }
 
@@ -112,6 +113,8 @@ export default async function DashboardPage() {
             tipo={tipo}
             stats={stats}
             items={items}
+            finDeSemana={finDeSemana}
+            admins={admins}
           />
         ) : (
           <RegistrarVisitantePanel />

@@ -1,15 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import type { RegistroRecord, PlacaRecord, PersonaRecord, ItemRecord } from '@/lib/airtable';
+import type { RegistroRecord, PlacaRecord, PersonaRecord, ItemRecord, FinDeSemanaRecord, AdminFullRecord } from '@/lib/airtable';
 import RegistrosPanel from './RegistrosPanel';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import VisitantesPanel from './VisitantesPanel';
 import ProgramacionSemanalPanel from './ProgramacionSemanalPanel';
 import OrdenesSalidaPanel from './OrdenesSalidaPanel';
 import ResumenAutorizaPanel from './ResumenAutorizaPanel';
+import PanelDeControlPanel from './PanelDeControlPanel';
 
-type Tab = 'resumen' | 'registros' | 'visitantes' | 'registrar' | 'programacion' | 'ordenes';
+type Tab = 'resumen' | 'registros' | 'visitantes' | 'registrar' | 'programacion' | 'ordenes' | 'control';
 
 interface Props {
   registros: RegistroRecord[];
@@ -19,9 +20,11 @@ interface Props {
   tipo: string;
   stats: { total: number; pendientes: number; aprobados: number; negados: number };
   items: ItemRecord[];
+  finDeSemana: FinDeSemanaRecord[];
+  admins: AdminFullRecord[];
 }
 
-export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items }: Props) {
+export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items, finDeSemana, admins }: Props) {
   const isPorteria  = tipo === 'Porteria';
   const isAutoriza  = tipo === 'Autoriza';
   const [tab, setTab] = useState<Tab>(isAutoriza ? 'resumen' : 'registros');
@@ -69,6 +72,15 @@ export default function DashboardContent({ registros, placas, personas, usuario,
             type="button"
             className={`db-tab${tab === 'resumen' ? ' active' : ''}`}
             onClick={() => setTab('resumen')}
+          >
+            Monitor
+          </button>
+        )}
+        {tipo === 'Superadmin' && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'control' ? ' active' : ''}`}
+            onClick={() => setTab('control')}
           >
             Panel de control
           </button>
@@ -144,6 +156,16 @@ export default function DashboardContent({ registros, placas, personas, usuario,
           personas={personas}
           registros={registros}
           usuario={usuario}
+        />
+      )}
+      {tab === 'control' && tipo === 'Superadmin' && (
+        <PanelDeControlPanel
+          registros={registros}
+          placas={placas}
+          personas={personas}
+          items={items}
+          finDeSemana={finDeSemana}
+          admins={admins}
         />
       )}
       {tab === 'registrar' && !isPorteria && <RegistrarVisitantePanel />}
