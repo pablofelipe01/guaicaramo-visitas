@@ -8,7 +8,14 @@ import { SESSION_COOKIE } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ panel?: string; id?: string }>;
+}) {
+  const sp = await searchParams;
+  const highlightId = sp.id;
+
   const cookieStore = await cookies();
   const raw = cookieStore.get(SESSION_COOKIE)?.value;
 
@@ -115,6 +122,7 @@ export default async function DashboardPage() {
             items={items}
             finDeSemana={finDeSemana}
             admins={admins}
+            highlightId={highlightId}
           />
         ) : (
           <RegistrarVisitantePanel />

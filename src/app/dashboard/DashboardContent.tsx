@@ -23,9 +23,10 @@ interface Props {
   items: ItemRecord[];
   finDeSemana: FinDeSemanaRecord[];
   admins: AdminFullRecord[];
+  highlightId?: string;
 }
 
-export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items, finDeSemana, admins }: Props) {
+export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items, finDeSemana, admins, highlightId }: Props) {
   const isPorteria  = tipo === 'Porteria';
   const isAutoriza  = tipo === 'Autoriza';
   const [tab, setTab] = useState<Tab>(isAutoriza ? 'resumen' : 'registros');
@@ -159,6 +160,7 @@ export default function DashboardContent({ registros, placas, personas, usuario,
           personas={personas}
           registros={registros}
           usuario={usuario}
+          highlightId={highlightId}
         />
       )}
       {tab === 'control' && tipo === 'Superadmin' && (

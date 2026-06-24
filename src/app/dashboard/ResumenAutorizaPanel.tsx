@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useTransition } from 'react';
+import { useState, useMemo, useTransition, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PlacaRecord, PersonaRecord, RegistroRecord } from '@/lib/airtable';
 import {
@@ -22,6 +22,7 @@ interface Props {
   personas: PersonaRecord[];
   registros: RegistroRecord[];
   usuario: string;
+  highlightId?: string;
 }
 
 /* ── helpers ── */
@@ -259,7 +260,7 @@ function Chip({ value, active, count, label, onClick }: { value: string; active:
    MAIN COMPONENT
 ════════════════════════════════════════════ */
 
-export default function ResumenAutorizaPanel({ placas, personas, registros, usuario }: Props) {
+export default function ResumenAutorizaPanel({ placas, personas, registros, usuario, highlightId }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -329,6 +330,23 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
     }
     return items;
   }, [registros, filtroReg, searchReg]);
+
+  /* ── auto-open on notification click ── */
+
+  const didAutoOpen = useRef(false);
+  useEffect(() => {
+    if (didAutoOpen.current || !highlightId) return;
+    didAutoOpen.current = true;
+    const found = allSolicitudes.find(item => item.data.id === highlightId);
+    if (!found) return;
+    setSubTab('solicitudes');
+    setFiltroSol('pendientes');
+    if (found.kind === 'placa') {
+      setDetail({ kind: 'placa', data: found.data as PlacaRecord });
+    } else {
+      setDetail({ kind: 'persona', data: found.data as PersonaRecord });
+    }
+  }, [highlightId, allSolicitudes]);
 
   /* ── relationship helpers ── */
 
