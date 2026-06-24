@@ -5,6 +5,7 @@ import { getRegistros, getPlacas, getPersonas, getAdmins, getItems, getFinDeSema
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import DashboardContent from './DashboardContent';
 import { SESSION_COOKIE } from '@/lib/session';
+import PushSubscriber from '@/components/PushSubscriber';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +102,9 @@ export default async function DashboardPage() {
           </form>
         </div>
       </header>
+
+      {/* Suscripción push silenciosa — solo para Autoriza y Superadmin */}
+      {(isAutoriza || isSuperadmin) && <PushSubscriber />}
 
       {/* Main */}
       <main className="db-main">
