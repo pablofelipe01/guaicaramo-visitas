@@ -137,6 +137,59 @@ function DonutChart({ total, segments, size = 96 }: {
   );
 }
 
+function fmtMinutes(mins: number): string {
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function HourlyBarChart({ data }: { data: { hour: number; count: number }[] }) {
+  const max = Math.max(...data.map(d => d.count), 1);
+  const W = 480, H = 60;
+  const slot = W / 24;
+  const bw = Math.max(slot - 3, 4);
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 18}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      {data.map((d, i) => {
+        const bh = Math.max((d.count / max) * H, d.count > 0 ? 2 : 0);
+        const x = i * slot + (slot - bw) / 2;
+        return (
+          <g key={i}>
+            <rect x={x} y={H - bh} width={bw} height={bh}
+              fill={d.count === max && max > 0 ? '#16a34a' : '#bbf7d0'} rx={2} />
+            {i % 4 === 0 && (
+              <text x={x + bw / 2} y={H + 13} fontSize={7.5} textAnchor="middle" fill="#9ca3af">{i}h</text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function ResponseTimeBuckets({ buckets, labels, total }: { buckets: number[]; labels: string[]; total: number }) {
+  const colors = ['#16a34a', '#84cc16', '#f59e0b', '#ef4444'];
+  if (total === 0) return <span style={{ fontSize: 12, color: 'var(--g-ink-3)' }}>Sin datos de autorización aún</span>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      {buckets.map((count, i) => {
+        const pct = total > 0 ? (count / total) * 100 : 0;
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: 'var(--g-ink-2)', minWidth: 64, textAlign: 'right', flexShrink: 0 }}>{labels[i]}</span>
+            <div style={{ flex: 1, height: 11, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: colors[i], borderRadius: 6, transition: 'width .4s' }} />
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, minWidth: 28, textAlign: 'right', color: colors[i] }}>{count}</span>
+            <span style={{ fontSize: 10, color: 'var(--g-ink-3)', minWidth: 34 }}>{pct.toFixed(0)}%</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── badges ── */
 
 function StatusBadge({ status }: { status?: string }) {
@@ -330,6 +383,75 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
     }
     return items;
   }, [registros, filtroReg, searchReg]);
+
+  const responseTimeStats = useMemo(() => {
+    const items = allSolicitudes.filter(i => i.data.creada && i.data.fecha_autorizado && i.data.autorizado);
+    const times = items.map(i => {
+      const created = new Date(i.data.creada!).getTime();
+      const auth = new Date(i.data.fecha_autorizado!).getTime();
+      return (auth - created) / 60000;
+    }).filter(t => t >= 0 && t < 60 * 24 * 30);
+    if (times.length === 0) return { avg: null, min: null, max: null, count: 0, buckets: [0, 0, 0, 0] as number[] };
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const min = Math.min(...times);
+    const max = Math.max(...times);
+    const buckets = [
+      times.filter(t => t < 5).length,
+      times.filter(t => t >= 5 && t < 30).length,
+      times.filter(t => t >= 30 && t < 120).length,
+      times.filter(t => t >= 120).length,
+    ];
+    return { avg, min, max, count: times.length, buckets };
+  }, [allSolicitudes]);
+
+  const visitDurationStats = useMemo(() => {
+    const items = registros.filter(r => r.entry_time && r.exit_time);
+    const durations = items.map(r => {
+      const entry = new Date(r.entry_time).getTime();
+      const exit = new Date(r.exit_time!).getTime();
+      return (exit - entry) / 60000;
+    }).filter(d => d > 0 && d < 60 * 24);
+    if (durations.length === 0) return { avg: null, count: 0 };
+    const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+    return { avg, count: durations.length };
+  }, [registros]);
+
+  const hourlyData = useMemo(() => {
+    const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }));
+    registros.forEach(r => {
+      if (!r.entry_time) return;
+      const h = new Date(r.entry_time).getHours();
+      hours[h].count++;
+    });
+    return hours;
+  }, [registros]);
+
+  const byAuthorizer = useMemo(() => {
+    const map = new Map<string, { auth: number; rejected: number }>();
+    allSolicitudes.forEach(i => {
+      const who = i.data.autoriza_visita;
+      if (!who) return;
+      const curr = map.get(who) ?? { auth: 0, rejected: 0 };
+      if (i.data.autorizado) curr.auth++;
+      if (i.data.estado === 'RECHAZADO') curr.rejected++;
+      map.set(who, curr);
+    });
+    return Array.from(map.entries())
+      .map(([name, v]) => ({ name, ...v, total: v.auth + v.rejected }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+  }, [allSolicitudes]);
+
+  const byNodo = useMemo(() => {
+    const map = new Map<string, number>();
+    registros.forEach(r => {
+      const nodo = r.nodo_origen || 'Sin nodo';
+      map.set(nodo, (map.get(nodo) ?? 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([nodo, count]) => ({ nodo, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [registros]);
 
   /* ── auto-open on notification click ── */
 
@@ -627,10 +749,65 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
               ))}
             </div>
 
-            {/* Charts */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 200px', gap: 20, alignItems: 'start' }}>
-              {/* Bar */}
-              <div>
+            {/* Tiempo de respuesta */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 12 }}>
+                Tiempo de respuesta de autorización
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, padding: '18px 20px', background: 'var(--g-cream)', border: '1px solid var(--g-line)', borderRadius: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginBottom: 3 }}>Promedio</div>
+                    <div style={{
+                      fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', lineHeight: 1,
+                      color: responseTimeStats.avg === null ? 'var(--g-ink-3)' :
+                             responseTimeStats.avg < 5 ? '#166534' :
+                             responseTimeStats.avg < 30 ? '#854d0e' : '#991b1b',
+                    }}>
+                      {responseTimeStats.avg === null ? '—' : fmtMinutes(responseTimeStats.avg)}
+                    </div>
+                    {responseTimeStats.avg !== null && (
+                      <div style={{
+                        fontSize: 10, marginTop: 4, padding: '2px 8px', borderRadius: 20, display: 'inline-block', fontWeight: 700,
+                        background: responseTimeStats.avg < 5 ? '#dcfce7' : responseTimeStats.avg < 30 ? '#fef9c3' : '#fee2e2',
+                        color: responseTimeStats.avg < 5 ? '#166534' : responseTimeStats.avg < 30 ? '#854d0e' : '#991b1b',
+                      }}>
+                        {responseTimeStats.avg < 5 ? 'Excelente' : responseTimeStats.avg < 30 ? 'Bueno' : 'Mejorable'}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--g-ink-3)', marginBottom: 2 }}>Más rápido</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#166534' }}>
+                        {responseTimeStats.min === null ? '—' : fmtMinutes(responseTimeStats.min)}
+                      </div>
+                    </div>
+                    <div style={{ background: '#fff7ed', borderRadius: 8, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--g-ink-3)', marginBottom: 2 }}>Más lento</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#9a3412' }}>
+                        {responseTimeStats.max === null ? '—' : fmtMinutes(responseTimeStats.max)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--g-ink-3)' }}>
+                    {responseTimeStats.count} autorizaciones medidas
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginBottom: 10 }}>Distribución de tiempos de respuesta</div>
+                  <ResponseTimeBuckets
+                    buckets={responseTimeStats.buckets}
+                    labels={['< 5 min', '5 – 30 min', '30 min – 2 h', '> 2 h']}
+                    total={responseTimeStats.count}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Charts: actividad + horas */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
                   Actividad — últimos 14 días
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
@@ -640,9 +817,22 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
                 </div>
                 <BarChart data={activityData} />
               </div>
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10 }}>
+                  Entradas por hora del día
+                  {hourlyData.some(d => d.count > 0) && (
+                    <span style={{ marginLeft: 8, fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--g-ink-2)' }}>
+                      · pico: {hourlyData.reduce((a, b) => b.count > a.count ? b : a).hour}:00h
+                    </span>
+                  )}
+                </div>
+                <HourlyBarChart data={hourlyData} />
+              </div>
+            </div>
 
-              {/* Donut registros */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            {/* Donuts + duración + nodo */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)' }}>Registros</div>
                 <DonutChart total={registros.length} segments={[{ value: regCounts.aprobados, color: '#22c55e' }, { value: regCounts.pendientes, color: '#fbbf24' }, { value: regCounts.negados, color: '#ef4444' }]} />
                 <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
@@ -655,9 +845,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
                   ))}
                 </div>
               </div>
-
-              {/* Donut solicitudes */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)' }}>Solicitudes</div>
                 <DonutChart total={allSolicitudes.length} segments={[{ value: solCounts.autorizadas, color: '#22c55e' }, { value: solCounts.pendientes, color: '#fbbf24' }, { value: solCounts.rechazadas, color: '#ef4444' }]} />
                 <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
@@ -670,15 +858,85 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
                   ))}
                 </div>
               </div>
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 8 }}>Duración promedio de visita</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: 'var(--g-green-dark)', lineHeight: 1 }}>
+                    {visitDurationStats.avg === null ? '—' : fmtMinutes(visitDurationStats.avg)}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginTop: 4 }}>
+                    {visitDurationStats.count} registro{visitDurationStats.count !== 1 ? 's' : ''} con entrada y salida
+                  </div>
+                </div>
+                <div style={{ borderTop: '1px solid var(--g-line)', paddingTop: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 8 }}>Por nodo de origen</div>
+                  {byNodo.length === 0
+                    ? <span style={{ fontSize: 12, color: 'var(--g-ink-3)' }}>Sin datos</span>
+                    : byNodo.slice(0, 4).map(n => {
+                      const pct = registros.length > 0 ? (n.count / registros.length) * 100 : 0;
+                      return (
+                        <div key={n.nodo} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, color: 'var(--g-ink-2)', minWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.nodo}</span>
+                          <div style={{ flex: 1, height: 8, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: '#22c55e', borderRadius: 4 }} />
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 700, minWidth: 22, textAlign: 'right' }}>{n.count}</span>
+                        </div>
+                      );
+                    })
+                  }
+                </div>
+              </div>
             </div>
+
+            {/* By authorizer */}
+            {byAuthorizer.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10 }}>Actividad por autorizador</div>
+                <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, overflow: 'hidden' }}>
+                  <table className="db-table">
+                    <thead>
+                      <tr>
+                        <th>Autorizador</th>
+                        <th style={{ textAlign: 'right' }}>Autorizadas</th>
+                        <th style={{ textAlign: 'right' }}>Rechazadas</th>
+                        <th style={{ textAlign: 'right' }}>Total</th>
+                        <th>Tasa aprobación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {byAuthorizer.map(a => {
+                        const rate = a.total > 0 ? (a.auth / a.total) * 100 : 0;
+                        return (
+                          <tr key={a.name}>
+                            <td style={{ fontWeight: 600, fontSize: 13 }}>{a.name}</td>
+                            <td style={{ textAlign: 'right', color: '#166534', fontWeight: 700 }}>{a.auth}</td>
+                            <td style={{ textAlign: 'right', color: '#991b1b', fontWeight: 700 }}>{a.rejected}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700 }}>{a.total}</td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ flex: 1, height: 8, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden', maxWidth: 100 }}>
+                                  <div style={{ width: `${rate}%`, height: '100%', background: rate >= 80 ? '#22c55e' : rate >= 50 ? '#f59e0b' : '#ef4444', borderRadius: 4 }} />
+                                </div>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: rate >= 80 ? '#166534' : rate >= 50 ? '#854d0e' : '#991b1b' }}>{rate.toFixed(0)}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Category breakdown */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10 }}>Categoría de registros</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
                 {[
-                  { icon: '🚗', l: 'Vehículos',     v: registros.filter(r => r.categoria === 'VEHICULO').length,     bg: 'var(--g-green-soft)' },
-                  { icon: '🚶', l: 'Peatones',       v: registros.filter(r => r.categoria === 'PEATON').length,       bg: '#fef9c3' },
+                  { icon: '🚗', l: 'Vehículos',     v: registros.filter(r => r.categoria === 'VEHICULO').length,      bg: 'var(--g-green-soft)' },
+                  { icon: '🚶', l: 'Peatones',       v: registros.filter(r => r.categoria === 'PEATON').length,        bg: '#fef9c3' },
                   { icon: '📅', l: 'Fin de semana',  v: registros.filter(r => r.categoria === 'FIN_DE_SEMANA').length, bg: '#f3e8ff' },
                   { icon: '—',  l: 'Sin categoría',  v: registros.filter(r => !r.categoria).length,                   bg: 'var(--g-cream)' },
                 ].map(c => (
