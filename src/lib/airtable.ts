@@ -133,7 +133,7 @@ export interface PlacaRecord {
   cedula: string;
   conductor: string;
   autorizado: boolean;
-  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO';
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
   vence?: string;   // ISO date "YYYY-MM-DD"
   notas?: string;
   adminIds?: string[];  // linked Administradores record IDs
@@ -170,6 +170,7 @@ export interface PersonaCreateFields {
   vence?: string; // ISO date "YYYY-MM-DD" o "YYYY-MM-DDTHH:mm:ss.sssZ"
   registrado_por?: string;
   adminId?: string;
+  areas_destino?: string;
 }
 
 export interface PersonaRecord {
@@ -177,7 +178,7 @@ export interface PersonaRecord {
   cedula: string;
   nombre: string;
   autorizado: boolean;
-  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO';
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
   vence?: string;
   cargo?: string;
   notas?: string;
@@ -269,6 +270,7 @@ export async function createPlacaSolicitud(fields: {
   vence?: string;
   registrado_por?: string;
   adminId?: string;
+  areas_destino?: string;
 }): Promise<string | null> {
   const body = {
     records: [{
@@ -278,10 +280,12 @@ export async function createPlacaSolicitud(fields: {
         conductor: fields.conductor,
         autorizado: false,
         estado: 'PENDIENTE',
-        ...(fields.notas           ? { notas:              fields.notas              } : {}),
-        ...(fields.vence           ? { vence:              fields.vence              } : {}),
-        ...(fields.registrado_por  ? { responsable_visita: fields.registrado_por     } : {}),
-        ...(fields.adminId         ? { Administradores:    [fields.adminId]          } : {}),
+        ...(fields.notas          ? { notas:              fields.notas          } : {}),
+        ...(fields.vence          ? { vence:              fields.vence          } : {}),
+        ...(fields.registrado_por ? { responsable_visita: fields.registrado_por } : {}),
+        ...(fields.adminId        ? { Administradores:    [fields.adminId]      } : {}),
+        ...(fields.areas_destino && process.env.AIRTABLE_FIELD_AREA_DESTINO_PLACAS
+          ? { [process.env.AIRTABLE_FIELD_AREA_DESTINO_PLACAS]: fields.areas_destino } : {}),
       },
     }],
   };
@@ -290,7 +294,11 @@ export async function createPlacaSolicitud(fields: {
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('[createPlacaSolicitud] Airtable error', res.status, JSON.stringify(err));
+    return null;
+  }
   const data = await res.json();
   return data.records?.[0]?.id ?? null;
 }
@@ -307,11 +315,13 @@ export async function createPersona(fields: PersonaCreateFields): Promise<string
         nombre:  fields.nombre,
         autorizado: false,
         estado: 'PENDIENTE',
-        ...(fields.cargo           ? { cargo:              fields.cargo              } : {}),
-        ...(fields.notas           ? { notas:              fields.notas              } : {}),
-        ...(fields.vence           ? { vence:              fields.vence              } : {}),
-        ...(fields.registrado_por  ? { responsable_visita: fields.registrado_por     } : {}),
-        ...(fields.adminId         ? { Administradores:    [fields.adminId]          } : {}),
+        ...(fields.cargo          ? { cargo:              fields.cargo          } : {}),
+        ...(fields.notas          ? { notas:              fields.notas          } : {}),
+        ...(fields.vence          ? { vence:              fields.vence          } : {}),
+        ...(fields.registrado_por ? { responsable_visita: fields.registrado_por } : {}),
+        ...(fields.adminId        ? { Administradores:    [fields.adminId]      } : {}),
+        ...(fields.areas_destino && process.env.AIRTABLE_FIELD_AREA_DESTINO_PERSONAS
+          ? { [process.env.AIRTABLE_FIELD_AREA_DESTINO_PERSONAS]: fields.areas_destino } : {}),
       },
     }],
   };
@@ -320,7 +330,11 @@ export async function createPersona(fields: PersonaCreateFields): Promise<string
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('[createPersona] Airtable error', res.status, JSON.stringify(err));
+    return null;
+  }
   const data = await res.json();
   return data.records?.[0]?.id ?? null;
 }
@@ -505,7 +519,7 @@ export async function updatePlacaAutorizado(
   id: string,
   autorizado: boolean,
   autorizadoPor?: string,
-  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO',
+  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO',
 ): Promise<boolean> {
   const estado = estadoOverride ?? (autorizado ? 'AUTORIZADO' : 'PENDIENTE');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -596,7 +610,7 @@ export async function updatePersonaAutorizado(
   id: string,
   autorizado: boolean,
   autorizadoPor?: string,
-  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO',
+  estadoOverride?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO',
 ): Promise<boolean> {
   const estado = estadoOverride ?? (autorizado ? 'AUTORIZADO' : 'PENDIENTE');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -764,7 +778,7 @@ export interface FinDeSemanaRecord {
   fecha_inicio?: string;
   fecha_fin?: string;
   resumen?: string;
-  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO' | 'PENDIENTE REGISTRO';
+  estado?: 'PENDIENTE' | 'AUTORIZADO' | 'RECHAZADO';
   nodo_origen?: string;
   resultado_notificado?: boolean;
   motivo_visita?: string;

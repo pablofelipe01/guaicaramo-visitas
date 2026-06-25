@@ -80,6 +80,8 @@ export default function RegistrarVisitantePanel() {
   const [tipoTransporte, setTipoTransporte]     = useState<'vehiculo' | 'peaton'>('vehiculo');
   const [placa, setPlaca]                       = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
+  const [areaDestino, setAreaDestino]           = useState('');
+  const [subAreaAdmin, setSubAreaAdmin]         = useState('');
   const [motivoVisita, setMotivoVisita]         = useState('');
   const [acompanantes, setAcompanantes]         = useState<{ cedula: string; nombre: string }[]>([]);
   const [errors, setErrors]                     = useState<Record<string, string>>({});
@@ -96,7 +98,9 @@ export default function RegistrarVisitantePanel() {
       if (!placa.trim())                                  e.placa            = 'Ingresa la placa del vehículo';
       else if (!/^[A-Za-z0-9]{5,7}$/.test(placa.trim())) e.placa            = 'Formato inválido (ej: ABC123)';
     }
-    if (!motivoVisita.trim())                             e.motivoVisita     = 'Indica el motivo de la visita';
+    if (!areaDestino)                                      e.areaDestino      = 'Selecciona el área de destino';
+    if (areaDestino === 'Administración' && !subAreaAdmin) e.subAreaAdmin     = 'Selecciona la subárea de administración';
+    if (!motivoVisita.trim())                              e.motivoVisita     = 'Indica el motivo de la visita';
     if (!fechaVencimiento) {
       e.fechaVencimiento = 'Indica la fecha de vencimiento';
     }
@@ -146,6 +150,8 @@ export default function RegistrarVisitantePanel() {
         cedula, nombre, placa, motivoVisita, acompanantes, tipoTransporte,
         fechaVencimiento ? `${fechaVencimiento}T17:00` : undefined,
         true, // requireSession: este formulario siempre corre autenticado
+        areaDestino || undefined,
+        areaDestino === 'Administración' ? subAreaAdmin || undefined : undefined,
       );
       console.log('[handleSubmit] Respuesta de servidor:', res);
       setResult(res);
@@ -156,6 +162,7 @@ export default function RegistrarVisitantePanel() {
     setResult(null);
     setCedula(''); setNombre(''); setPlaca('');
     setTipoTransporte('vehiculo'); setFechaVencimiento('');
+    setAreaDestino(''); setSubAreaAdmin('');
     setMotivoVisita(''); setAcompanantes([]); setErrors({});
   }
 
@@ -342,6 +349,90 @@ export default function RegistrarVisitantePanel() {
           )}
 
           <SectionLabel>Detalle de la visita</SectionLabel>
+
+          {/* Área de destino */}
+          <div className="field">
+            <label className="field-label" htmlFor="rv-area">Proceso al que se dirige el visitante</label>
+            <div className="field-input-wrap">
+              <span className="field-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+              </span>
+              <select
+                id="rv-area"
+                value={areaDestino}
+                onChange={e => { setAreaDestino(e.target.value); setSubAreaAdmin(''); setErrors(p => { const n = { ...p }; delete n.areaDestino; delete n.subAreaAdmin; return n; }); }}
+                disabled={isPending}
+                aria-describedby={errors.areaDestino ? 'rv-err-area' : undefined}
+                style={{
+                  width: '100%', appearance: 'none', WebkitAppearance: 'none',
+                  border: `1.5px solid ${errors.areaDestino ? 'var(--g-coral)' : 'var(--g-line)'}`,
+                  borderRadius: 12, padding: '14px 40px 14px 44px',
+                  background: 'var(--g-paper)', fontFamily: 'inherit',
+                  fontSize: 15, color: areaDestino ? 'var(--g-ink)' : 'var(--g-ink-3)',
+                  outline: 'none', cursor: isPending ? 'not-allowed' : 'pointer',
+                  transition: 'border-color .2s ease, box-shadow .2s ease',
+                }}
+              >
+                <option value="">Selecciona el área de destino…</option>
+                <option value="Administración">Administración</option>
+                <option value="Agronómico">Agronómico</option>
+                <option value="Báscula y almacén">Báscula y almacén</option>
+                <option value="Fondo de empleados">Fondo de empleados</option>
+                <option value="Planta de beneficio">Planta de beneficio</option>
+                <option value="Sirius">Sirius</option>
+              </select>
+              <span style={{ position: 'absolute', right: 14, pointerEvents: 'none', color: 'var(--g-ink-3)', display: 'flex', alignItems: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
+            </div>
+            {errors.areaDestino && <FieldError id="rv-err-area" msg={errors.areaDestino} />}
+          </div>
+
+          {/* Subárea de administración — solo cuando se selecciona Administración */}
+          {areaDestino === 'Administración' && (
+            <div className="field">
+              <label className="field-label" htmlFor="rv-subarea">Área de administración</label>
+              <div className="field-input-wrap">
+                <span className="field-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+                  </svg>
+                </span>
+                <select
+                  id="rv-subarea"
+                  value={subAreaAdmin}
+                  onChange={e => { setSubAreaAdmin(e.target.value); setErrors(p => { const n = { ...p }; delete n.subAreaAdmin; return n; }); }}
+                  disabled={isPending}
+                  aria-describedby={errors.subAreaAdmin ? 'rv-err-subarea' : undefined}
+                  style={{
+                    width: '100%', appearance: 'none', WebkitAppearance: 'none',
+                    border: `1.5px solid ${errors.subAreaAdmin ? 'var(--g-coral)' : 'var(--g-line)'}`,
+                    borderRadius: 12, padding: '14px 40px 14px 44px',
+                    background: 'var(--g-paper)', fontFamily: 'inherit',
+                    fontSize: 15, color: subAreaAdmin ? 'var(--g-ink)' : 'var(--g-ink-3)',
+                    outline: 'none', cursor: isPending ? 'not-allowed' : 'pointer',
+                    transition: 'border-color .2s ease, box-shadow .2s ease',
+                  }}
+                >
+                  <option value="">Selecciona la subárea…</option>
+                  <option value="Ambiental">Ambiental</option>
+                  <option value="Contabilidad">Contabilidad</option>
+                  <option value="Ganadería">Ganadería</option>
+                  <option value="Gestión humana">Gestión humana</option>
+                  <option value="Planeación y formación">Planeación y formación</option>
+                  <option value="Taller agrícola">Taller agrícola</option>
+                  <option value="TIC">TIC</option>
+                </select>
+                <span style={{ position: 'absolute', right: 14, pointerEvents:
+                   'none', color: 'var(--g-ink-3)', display: 'flex', alignItems: 'center' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                </span>
+              </div>
+              {errors.subAreaAdmin && <FieldError id="rv-err-subarea" msg={errors.subAreaAdmin} />}
+            </div>
+          )}
 
           {/* Motivo + fecha — two columns */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0 20px' }}>

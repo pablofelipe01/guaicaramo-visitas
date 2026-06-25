@@ -45,7 +45,6 @@ function StatusBadge({ status }: { status?: string }) {
     APROBADO:           { bg: '#dcfce7',                color: '#166534' },
     AUTORIZADO:         { bg: '#dcfce7',                color: '#166534' },
     PENDIENTE:            { bg: 'var(--g-amber-soft)',    color: '#8a5c00' },
-    'PENDIENTE REGISTRO': { bg: '#e0f2fe',               color: '#0369a1' },
     NEGADO:               { bg: 'var(--g-coral-soft)',    color: '#a8200a' },
     RECHAZADO:          { bg: 'var(--g-coral-soft)',    color: '#a8200a' },
     SALIDA_SIN_ENTRADA: { bg: '#f3e8ff',                color: '#6b21a8' },

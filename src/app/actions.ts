@@ -60,6 +60,8 @@ export async function submitVisitorRequest(
   tipoTransporte?: 'vehiculo' | 'peaton',
   fechaVencimiento?: string,
   requireSession?: boolean,
+  areaDestino?: string,
+  subAreaAdmin?: string,
 ): Promise<VisitorResult> {
   // Rate limit: máx. 5 solicitudes por IP cada 60 segundos
   const ip = await getClientIp();
@@ -70,6 +72,10 @@ export async function submitVisitorRequest(
   const placaUpper = placa.toUpperCase().trim();
   const cedulaTrim = cedula.trim();
   const esVehiculo = (tipoTransporte ?? 'vehiculo') === 'vehiculo';
+  // Combina área y subárea en un solo string para el campo "Areas Destino" de Airtable
+  const areasDestino = areaDestino
+    ? (subAreaAdmin ? `${areaDestino} - ${subAreaAdmin}` : areaDestino)
+    : undefined;
   // Convierte datetime-local (YYYY-MM-DDTHH:mm, hora local de la finca) a ISO UTC.
   // Se añade el offset de zona horaria para que el servidor (UTC) no lo malinterprete.
   const tzOffset = process.env.APP_TZ_OFFSET ?? '-05:00';
@@ -145,6 +151,7 @@ export async function submitVisitorRequest(
           vence:          venceISO,
           registrado_por: registradoPor,
           adminId,
+          areas_destino:  areasDestino,
         }),
         ...(acompanantes ?? []).map((ac, idx) => {
           console.log(`[submitVisitorRequest] Creando acompañante ${idx + 1}:`, { cedula: ac.cedula, nombre: ac.nombre });
@@ -156,6 +163,7 @@ export async function submitVisitorRequest(
             vence:          venceISO,
             registrado_por: registradoPor,
             adminId,
+            areas_destino:  areasDestino,
           });
         }),
       ];
@@ -198,6 +206,7 @@ export async function submitVisitorRequest(
           vence:          venceISO,
           registrado_por: registradoPor,
           adminId,
+          areas_destino:  areasDestino,
         }),
         ...(acompanantes ?? []).map((ac, idx) => {
           console.log(`[submitVisitorRequest] Creando acompañante ${idx + 1}:`, { cedula: ac.cedula, nombre: ac.nombre });
@@ -209,6 +218,7 @@ export async function submitVisitorRequest(
             vence:          venceISO,
             registrado_por: registradoPor,
             adminId,
+            areas_destino:  areasDestino,
           });
         }),
       ];
