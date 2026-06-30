@@ -69,51 +69,102 @@ function visitorName(r: RegistroRecord) {
   return r.nombre_visitante || '—';
 }
 
+function fmtMinutes(mins: number): string {
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 /* ── SVG charts ── */
 
 function BarChart({ data }: { data: { label: string; count: number; aprobados: number }[] }) {
   const max = Math.max(...data.map(d => d.count), 1);
-  const W = 560, H = 90, PX = 4;
-  const slot = (W - PX * 2) / data.length;
-  const bw = Math.max(slot - 6, 4);
+  const W = 560, CH = 140;
+  const PL = 28, PR = 8, PT = 20, PB = 22;
+  const iW = W - PL - PR, iH = CH;
+  const totalH = PT + iH + PB;
+  const bottom = PT + iH;
+  const n = data.length;
+
+  const pts = data.map((d, i) => ({
+    x: PL + (n > 1 ? (i / (n - 1)) * iW : iW / 2),
+    yT: bottom - (d.count / max) * iH,
+    yA: bottom - (d.aprobados / max) * iH,
+    label: d.label, count: d.count, aprobados: d.aprobados,
+  }));
+
+  function curve(ys: 'yT' | 'yA', close: boolean) {
+    if (!pts.length) return '';
+    const parts: string[] = [`M${pts[0].x},${pts[0][ys]}`];
+    for (let i = 1; i < pts.length; i++) {
+      const cx = (pts[i-1].x + pts[i].x) / 2;
+      parts.push(`C${cx},${pts[i-1][ys]} ${cx},${pts[i][ys]} ${pts[i].x},${pts[i][ys]}`);
+    }
+    if (close) parts.push(`L${pts[n-1].x},${bottom} L${pts[0].x},${bottom} Z`);
+    return parts.join(' ');
+  }
 
   return (
-    <svg viewBox={`0 0 ${W} ${H + 22}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-      {[0, 0.5, 1].map(f => (
-        <line key={f} x1={PX} x2={W - PX} y1={H - f * H} y2={H - f * H}
-          stroke="#e5e7eb" strokeWidth={1} />
-      ))}
-      {data.map((d, i) => {
-        const bh  = Math.max((d.count / max) * H, d.count > 0 ? 2 : 0);
-        const ah  = Math.max((d.aprobados / max) * H, d.aprobados > 0 ? 2 : 0);
-        const x   = PX + i * slot + (slot - bw) / 2;
+    <svg viewBox={`0 0 ${W} ${totalH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <defs>
+        <linearGradient id="act-fill-total" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="act-fill-aprob" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#166534" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#166534" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      {/* Grid */}
+      <line x1={PL} x2={W-PR} y1={bottom} y2={bottom} stroke="#d1d5db" strokeWidth={1.5} />
+      {[0.25, 0.5, 0.75, 1].map(f => {
+        const y = bottom - f * iH;
         return (
-          <g key={i}>
-            <rect x={x} y={H - bh} width={bw} height={bh} fill="#bbf7d0" rx={3} />
-            <rect x={x} y={H - ah} width={bw} height={ah} fill="#16a34a" rx={3} />
-            {d.count > 0 && bh > 14 && (
-              <text x={x + bw / 2} y={H - bh - 3} fontSize={8} textAnchor="middle" fill="#6b7280">{d.count}</text>
-            )}
-            {(i % 2 === 0 || data.length <= 7) && (
-              <text x={x + bw / 2} y={H + 14} fontSize={8} textAnchor="middle" fill="#9ca3af">{d.label}</text>
-            )}
+          <g key={f}>
+            <line x1={PL} x2={W-PR} y1={y} y2={y} stroke="#f3f4f6" strokeWidth={1} />
+            <text x={PL - 5} y={y + 4} fontSize={9} textAnchor="end" fill="#d1d5db">{Math.round(f * max)}</text>
           </g>
         );
       })}
+
+      {/* Filled areas */}
+      <path d={curve('yT', true)} fill="url(#act-fill-total)" />
+      <path d={curve('yA', true)} fill="url(#act-fill-aprob)" />
+
+      {/* Lines */}
+      <path d={curve('yT', false)} fill="none" stroke="#86efac" strokeWidth={2} strokeLinejoin="round" />
+      <path d={curve('yA', false)} fill="none" stroke="#16a34a" strokeWidth={2.5} strokeLinejoin="round" />
+
+      {/* Dots + labels */}
+      {pts.map((p, i) => (
+        <g key={i}>
+          <circle cx={p.x} cy={p.yT} r={3.5} fill="#86efac" stroke="#fff" strokeWidth={1.5} />
+          {p.aprobados > 0 && (
+            <circle cx={p.x} cy={p.yA} r={4} fill="#16a34a" stroke="#fff" strokeWidth={1.5} />
+          )}
+          {p.count > 0 && (
+            <text x={p.x} y={p.yT - 7} fontSize={9} textAnchor="middle" fill="#374151" fontWeight="600">{p.count}</text>
+          )}
+          <text x={p.x} y={totalH - 3} fontSize={9} textAnchor="middle" fill="#9ca3af">{p.label}</text>
+        </g>
+      ))}
     </svg>
   );
 }
 
-function DonutChart({ total, segments, size = 96 }: {
+function DonutChart({ total, segments, size = 120 }: {
   total: number;
   segments: { value: number; color: string }[];
   size?: number;
 }) {
-  const R = 34, cx = size / 2, cy = size / 2, C = 2 * Math.PI * R;
+  const R = 38, cx = size / 2, cy = size / 2, C = 2 * Math.PI * R;
   if (total === 0) return (
     <svg viewBox={`0 0 ${size} ${size}`} style={{ width: size, height: size }}>
-      <circle cx={cx} cy={cy} r={R} fill="none" stroke="#e5e7eb" strokeWidth={14} />
-      <text x={cx} y={cy + 5} textAnchor="middle" fontSize={12} fill="#9ca3af">0</text>
+      <circle cx={cx} cy={cy} r={R} fill="none" stroke="#e5e7eb" strokeWidth={16} />
+      <text x={cx} y={cy + 5} textAnchor="middle" fontSize={14} fill="#9ca3af">0</text>
     </svg>
   );
   let cum = 0;
@@ -126,44 +177,89 @@ function DonutChart({ total, segments, size = 96 }: {
         cum += seg.value;
         return (
           <circle key={i} cx={cx} cy={cy} r={R} fill="none"
-            stroke={seg.color} strokeWidth={14}
+            stroke={seg.color} strokeWidth={16}
             strokeDasharray={`${dash} ${C - dash}`}
             transform={`rotate(${rot}, ${cx}, ${cy})`} />
         );
       })}
-      <text x={cx} y={cy - 4} textAnchor="middle" fontSize={15} fontWeight={700} fill="#111827">{total}</text>
-      <text x={cx} y={cy + 10} textAnchor="middle" fontSize={8} fill="#9ca3af">total</text>
+      <text x={cx} y={cy - 4} textAnchor="middle" fontSize={17} fontWeight={700} fill="#111827">{total}</text>
+      <text x={cx} y={cy + 11} textAnchor="middle" fontSize={9} fill="#9ca3af">total</text>
     </svg>
   );
 }
 
-function fmtMinutes(mins: number): string {
-  if (mins < 60) return `${Math.round(mins)}m`;
-  const h = Math.floor(mins / 60);
-  const m = Math.round(mins % 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
 function HourlyBarChart({ data }: { data: { hour: number; count: number }[] }) {
   const max = Math.max(...data.map(d => d.count), 1);
-  const W = 480, H = 60;
-  const slot = W / 24;
-  const bw = Math.max(slot - 3, 4);
+  const peakIdx = data.reduce((pi, d, i) => d.count > data[pi].count ? i : pi, 0);
+  const W = 480, CH = 96;
+  const PL = 6, PR = 6, PT = 24, PB = 18;
+  const iW = W - PL - PR, iH = CH;
+  const totalH = PT + iH + PB;
+  const bottom = PT + iH;
+  const n = data.length;
+
+  const pts = data.map((d, i) => ({
+    x: PL + (i / (n - 1)) * iW,
+    y: bottom - (d.count / max) * iH,
+    count: d.count, hour: d.hour,
+  }));
+
+  function curve(close: boolean) {
+    if (!pts.length) return '';
+    const parts: string[] = [`M${pts[0].x},${pts[0].y}`];
+    for (let i = 1; i < pts.length; i++) {
+      const cx = (pts[i-1].x + pts[i].x) / 2;
+      parts.push(`C${cx},${pts[i-1].y} ${cx},${pts[i].y} ${pts[i].x},${pts[i].y}`);
+    }
+    if (close) parts.push(`L${pts[n-1].x},${bottom} L${pts[0].x},${bottom} Z`);
+    return parts.join(' ');
+  }
+
+  const pk = pts[peakIdx];
+
   return (
-    <svg viewBox={`0 0 ${W} ${H + 18}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-      {data.map((d, i) => {
-        const bh = Math.max((d.count / max) * H, d.count > 0 ? 2 : 0);
-        const x = i * slot + (slot - bw) / 2;
-        return (
-          <g key={i}>
-            <rect x={x} y={H - bh} width={bw} height={bh}
-              fill={d.count === max && max > 0 ? '#16a34a' : '#bbf7d0'} rx={2} />
-            {i % 4 === 0 && (
-              <text x={x + bw / 2} y={H + 13} fontSize={7.5} textAnchor="middle" fill="#9ca3af">{i}h</text>
-            )}
-          </g>
-        );
-      })}
+    <svg viewBox={`0 0 ${W} ${totalH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+      <defs>
+        <linearGradient id="hourly-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.32" />
+          <stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+
+      {/* Noche / madrugada shading */}
+      <rect x={PL} y={PT} width={iW * (6/24)} height={iH} fill="#f1f5f9" opacity={0.6} />
+      <rect x={PL + iW * (21/24)} y={PT} width={iW * (3/24)} height={iH} fill="#f1f5f9" opacity={0.6} />
+
+      {/* Grid */}
+      <line x1={PL} x2={W-PR} y1={bottom} y2={bottom} stroke="#d1d5db" strokeWidth={1.5} />
+      <line x1={PL} x2={W-PR} y1={PT + iH/2} y2={PT + iH/2} stroke="#f3f4f6" strokeWidth={1} strokeDasharray="3,3" />
+
+      {/* Area + line */}
+      <path d={curve(true)} fill="url(#hourly-grad)" />
+      <path d={curve(false)} fill="none" stroke="#22c55e" strokeWidth={2.5} strokeLinejoin="round" />
+
+      {/* Peak: línea vertical + punto + etiqueta */}
+      {max > 0 && (
+        <>
+          <line x1={pk.x} x2={pk.x} y1={pk.y + 8} y2={bottom}
+            stroke="#16a34a" strokeWidth={1} strokeDasharray="3,2" opacity={0.45} />
+          <circle cx={pk.x} cy={pk.y} r={6.5} fill="#16a34a" stroke="#fff" strokeWidth={2.5} />
+          <text x={pk.x} y={pk.y - 10} fontSize={10} textAnchor="middle" fill="#166534" fontWeight="800">{pk.count}</text>
+          <text x={pk.x} y={PT - 5} fontSize={9} textAnchor="middle" fill="#16a34a" fontWeight="700">{pk.hour}:00h ▲</text>
+        </>
+      )}
+
+      {/* Puntos pequeños en horas con actividad */}
+      {pts.map((p, i) =>
+        p.count > 0 && i !== peakIdx ? (
+          <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#4ade80" stroke="#fff" strokeWidth={1} />
+        ) : null
+      )}
+
+      {/* Etiquetas de hora cada 4h */}
+      {[0, 4, 8, 12, 16, 20].map(h => (
+        <text key={h} x={pts[h].x} y={totalH - 2} fontSize={8} textAnchor="middle" fill="#9ca3af">{h}h</text>
+      ))}
     </svg>
   );
 }
@@ -172,13 +268,13 @@ function ResponseTimeBuckets({ buckets, labels, total }: { buckets: number[]; la
   const colors = ['#16a34a', '#84cc16', '#f59e0b', '#ef4444'];
   if (total === 0) return <span style={{ fontSize: 12, color: 'var(--g-ink-3)' }}>Sin datos de autorización aún</span>;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
       {buckets.map((count, i) => {
         const pct = total > 0 ? (count / total) * 100 : 0;
         return (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--g-ink-2)', minWidth: 64, textAlign: 'right', flexShrink: 0 }}>{labels[i]}</span>
-            <div style={{ flex: 1, height: 11, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
+            <span style={{ fontSize: 11, color: 'var(--g-ink-2)', minWidth: 72, textAlign: 'right', flexShrink: 0 }}>{labels[i]}</span>
+            <div style={{ flex: 1, height: 12, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden' }}>
               <div style={{ width: `${pct}%`, height: '100%', background: colors[i], borderRadius: 6, transition: 'width .4s' }} />
             </div>
             <span style={{ fontSize: 12, fontWeight: 700, minWidth: 28, textAlign: 'right', color: colors[i] }}>{count}</span>
@@ -309,6 +405,34 @@ function Chip({ value, active, count, label, onClick }: { value: string; active:
   );
 }
 
+/* ── overview sub-components ── */
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 12 }}>
+      {children}
+    </div>
+  );
+}
+
+function KpiCard({ icon, label, value, color, borderColor, bg }: {
+  icon: string; label: string; value: number; color: string; borderColor: string; bg: string;
+}) {
+  return (
+    <div style={{
+      padding: '16px 18px', borderRadius: 12, background: bg,
+      border: '1px solid var(--g-line)', borderLeft: `4px solid ${borderColor}`,
+      display: 'flex', flexDirection: 'column', gap: 6,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 15 }}>{icon}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--g-ink-3)', lineHeight: 1.2 }}>{label}</span>
+      </div>
+      <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 32, fontWeight: 800, lineHeight: 1, color }}>{value.toLocaleString()}</span>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════
    MAIN COMPONENT
 ════════════════════════════════════════════ */
@@ -391,17 +515,20 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
       const auth = new Date(i.data.fecha_autorizado!).getTime();
       return (auth - created) / 60000;
     }).filter(t => t >= 0 && t < 60 * 24 * 30);
-    if (times.length === 0) return { avg: null, min: null, max: null, count: 0, buckets: [0, 0, 0, 0] as number[] };
+    if (times.length === 0) return { avg: null, median: null, min: null, withinTwoH: 0, count: 0, buckets: [0, 0, 0, 0] as number[] };
+    const sorted = [...times].sort((a, b) => a - b);
     const avg = times.reduce((a, b) => a + b, 0) / times.length;
-    const min = Math.min(...times);
-    const max = Math.max(...times);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+    const min = sorted[0];
+    const withinTwoH = times.filter(t => t < 120).length;
     const buckets = [
       times.filter(t => t < 5).length,
       times.filter(t => t >= 5 && t < 30).length,
       times.filter(t => t >= 30 && t < 120).length,
       times.filter(t => t >= 120).length,
     ];
-    return { avg, min, max, count: times.length, buckets };
+    return { avg, median, min, withinTwoH, count: times.length, buckets };
   }, [allSolicitudes]);
 
   const visitDurationStats = useMemo(() => {
@@ -452,6 +579,13 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
       .map(([nodo, count]) => ({ nodo, count }))
       .sort((a, b) => b.count - a.count);
   }, [registros]);
+
+  const categoryCounts = useMemo(() => ({
+    vehiculos: registros.filter(r => r.categoria === 'VEHICULO').length,
+    peatones:  registros.filter(r => r.categoria === 'PEATON').length,
+    finde:     registros.filter(r => r.categoria === 'FIN_DE_SEMANA').length,
+    sin:       registros.filter(r => !r.categoria).length,
+  }), [registros]);
 
   /* ── auto-open on notification click ── */
 
@@ -698,16 +832,21 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
   return (
     <>
       {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg, var(--g-green-dark) 0%, var(--g-green) 100%)', borderRadius: 'var(--card-radius)', padding: '20px 28px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, boxShadow: '0 4px 24px rgba(78,91,49,.22)' }}>
+      <div style={{ background: 'linear-gradient(135deg, var(--g-green-dark) 0%, var(--g-green) 100%)', borderRadius: 'var(--card-radius)', padding: '22px 30px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, boxShadow: '0 4px 24px rgba(78,91,49,.22)' }}>
         <div>
           <p style={{ margin: '0 0 3px', fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', opacity: .75 }}>Panel de monitoreo — {usuario}</p>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontStyle: 'italic', fontWeight: 600, fontSize: 'clamp(20px,2.5vw,26px)', lineHeight: 1.1 }}>Solicitudes y registros de visita</h2>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {[{ l: 'Visitantes', v: totalV }, { l: 'Pend. autorizar', v: solCounts.pendientes, u: solCounts.pendientes > 0 }, { l: 'Registros', v: registros.length }, { l: 'Por aprobar', v: regCounts.pendientes, u: regCounts.pendientes > 0 }].map(k => (
-            <div key={k.l} style={{ background: (k as {u?: boolean}).u ? 'rgba(255,200,0,.28)' : 'rgba(255,255,255,.15)', borderRadius: 10, padding: '8px 16px', minWidth: 70, textAlign: 'center' }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{k.v}</div>
-              <div style={{ fontSize: 11, opacity: .85, marginTop: 2 }}>{k.l}</div>
+          {[
+            { l: 'Visitantes',    v: totalV,                 u: false },
+            { l: 'Pend. autorizar', v: solCounts.pendientes,  u: solCounts.pendientes > 0 },
+            { l: 'Registros',     v: registros.length,       u: false },
+            { l: 'Por aprobar',   v: regCounts.pendientes,   u: regCounts.pendientes > 0 },
+          ].map(k => (
+            <div key={k.l} style={{ background: k.u ? 'rgba(255,200,0,.3)' : 'rgba(255,255,255,.15)', borderRadius: 12, padding: '10px 18px', minWidth: 72, textAlign: 'center', border: k.u ? '1px solid rgba(255,200,0,.5)' : 'none' }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 24, fontWeight: 700, lineHeight: 1 }}>{k.v}</div>
+              <div style={{ fontSize: 11, opacity: .85, marginTop: 3 }}>{k.l}</div>
             </div>
           ))}
         </div>
@@ -730,170 +869,310 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
         {subTab === 'overview' && (
           <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* KPIs */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
-              {[
-                { l: 'Total visitantes',    v: totalV,                  c: 'var(--g-green-dark)' },
-                { l: 'Pend. autorizar',     v: solCounts.pendientes,    c: solCounts.pendientes > 0 ? '#854d0e' : 'var(--g-ink-2)' },
-                { l: 'Autorizados',         v: solCounts.autorizadas,   c: '#166534' },
-                { l: 'Rechazados',          v: solCounts.rechazadas,    c: '#991b1b' },
-                { l: 'Total registros',     v: registros.length,        c: 'var(--g-green-dark)' },
-                { l: 'Aprobados',           v: regCounts.aprobados,     c: '#166534' },
-                { l: 'Negados',             v: regCounts.negados,       c: '#991b1b' },
-                { l: 'Por aprobar',         v: regCounts.pendientes,    c: regCounts.pendientes > 0 ? '#854d0e' : 'var(--g-ink-2)' },
-              ].map(k => (
-                <div key={k.l} className="db-stat-card" style={{ padding: '14px 18px' }}>
-                  <span className="db-stat-label">{k.l}</span>
-                  <span className="db-stat-value" style={{ fontSize: 30, color: k.c }}>{k.v}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Tiempo de respuesta */}
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 12 }}>
-                Tiempo de respuesta de autorización
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, padding: '18px 20px', background: 'var(--g-cream)', border: '1px solid var(--g-line)', borderRadius: 12 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginBottom: 3 }}>Promedio</div>
+            {/* ── Pipeline de visitas ── */}
+            <div style={{ background: 'var(--g-cream)', borderRadius: 14, padding: '20px 24px', border: '1px solid var(--g-line)' }}>
+              <SectionLabel>Flujo de visitas</SectionLabel>
+              <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                {[
+                  { icon: '📋', label: 'Solicitudes',   value: totalV,               color: '#0369a1', border: '#3b82f6', bg: '#eff6ff' },
+                  { icon: '✅', label: 'Autorizadas',   value: solCounts.autorizadas, color: '#166534', border: '#22c55e', bg: '#f0fdf4' },
+                  { icon: '📝', label: 'Registros',     value: registros.length,      color: '#6b21a8', border: '#a855f7', bg: '#faf5ff' },
+                  { icon: '✓',  label: 'Aprobados',     value: regCounts.aprobados,   color: '#166534', border: '#22c55e', bg: '#f0fdf4' },
+                ].map((step, i, arr) => (
+                  <div key={step.label} style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
                     <div style={{
-                      fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', lineHeight: 1,
-                      color: responseTimeStats.avg === null ? 'var(--g-ink-3)' :
-                             responseTimeStats.avg < 5 ? '#166534' :
-                             responseTimeStats.avg < 30 ? '#854d0e' : '#991b1b',
+                      flex: 1, textAlign: 'center', padding: '14px 10px',
+                      background: step.bg, borderRadius: 12,
+                      border: `1.5px solid ${step.border}40`,
                     }}>
-                      {responseTimeStats.avg === null ? '—' : fmtMinutes(responseTimeStats.avg)}
-                    </div>
-                    {responseTimeStats.avg !== null && (
+                      <div style={{ fontSize: 22, marginBottom: 4 }}>{step.icon}</div>
                       <div style={{
-                        fontSize: 10, marginTop: 4, padding: '2px 8px', borderRadius: 20, display: 'inline-block', fontWeight: 700,
-                        background: responseTimeStats.avg < 5 ? '#dcfce7' : responseTimeStats.avg < 30 ? '#fef9c3' : '#fee2e2',
-                        color: responseTimeStats.avg < 5 ? '#166534' : responseTimeStats.avg < 30 ? '#854d0e' : '#991b1b',
+                        fontSize: 30, fontWeight: 800, lineHeight: 1,
+                        fontFamily: 'var(--font-display)', fontStyle: 'italic', color: step.color,
                       }}>
-                        {responseTimeStats.avg < 5 ? 'Excelente' : responseTimeStats.avg < 30 ? 'Bueno' : 'Mejorable'}
+                        {step.value.toLocaleString()}
                       </div>
+                      <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginTop: 4, fontWeight: 600 }}>{step.label}</div>
+                      {i > 0 && totalV > 0 && (
+                        <div style={{ fontSize: 10, color: step.color, marginTop: 3, fontWeight: 700 }}>
+                          {((step.value / totalV) * 100).toFixed(0)}% del total
+                        </div>
+                      )}
+                    </div>
+                    {i < arr.length - 1 && (
+                      <div style={{ fontSize: 20, color: 'var(--g-ink-3)', padding: '0 8px', flexShrink: 0, opacity: .5 }}>→</div>
                     )}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <div style={{ background: '#f0fdf4', borderRadius: 8, padding: '8px 10px' }}>
-                      <div style={{ fontSize: 10, color: 'var(--g-ink-3)', marginBottom: 2 }}>Más rápido</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#166534' }}>
-                        {responseTimeStats.min === null ? '—' : fmtMinutes(responseTimeStats.min)}
-                      </div>
-                    </div>
-                    <div style={{ background: '#fff7ed', borderRadius: 8, padding: '8px 10px' }}>
-                      <div style={{ fontSize: 10, color: 'var(--g-ink-3)', marginBottom: 2 }}>Más lento</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#9a3412' }}>
-                        {responseTimeStats.max === null ? '—' : fmtMinutes(responseTimeStats.max)}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--g-ink-3)' }}>
-                    {responseTimeStats.count} autorizaciones medidas
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginBottom: 10 }}>Distribución de tiempos de respuesta</div>
-                  <ResponseTimeBuckets
-                    buckets={responseTimeStats.buckets}
-                    labels={['< 5 min', '5 – 30 min', '30 min – 2 h', '> 2 h']}
-                    total={responseTimeStats.count}
-                  />
-                </div>
+                ))}
               </div>
             </div>
 
-            {/* Charts: actividad + horas */}
+            {/* ── KPI Grid ── */}
+            <div>
+              <SectionLabel>Solicitudes de visitantes</SectionLabel>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+                <KpiCard icon="👥" label="Total visitantes"  value={totalV}               color="#166534"  borderColor="#22c55e" bg="#f0fdf4" />
+                <KpiCard icon="⏳" label="Pend. autorizar"   value={solCounts.pendientes} color={solCounts.pendientes > 0 ? '#854d0e' : '#64748b'} borderColor="#f59e0b" bg="#fffbeb" />
+                <KpiCard icon="✅" label="Autorizados"        value={solCounts.autorizadas} color="#166534" borderColor="#22c55e" bg="#f0fdf4" />
+                <KpiCard icon="🚫" label="Rechazados"         value={solCounts.rechazadas} color="#991b1b"  borderColor="#ef4444" bg="#fef2f2" />
+              </div>
+              <SectionLabel>Registros de acceso</SectionLabel>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                <KpiCard icon="📋" label="Total registros"   value={registros.length}     color="#1e40af"  borderColor="#60a5fa" bg="#eff6ff" />
+                <KpiCard icon="✓"  label="Aprobados"         value={regCounts.aprobados}  color="#166534"  borderColor="#22c55e" bg="#f0fdf4" />
+                <KpiCard icon="✗"  label="Negados"           value={regCounts.negados}    color="#991b1b"  borderColor="#ef4444" bg="#fef2f2" />
+                <KpiCard icon="🔔" label="Por aprobar"       value={regCounts.pendientes} color={regCounts.pendientes > 0 ? '#854d0e' : '#64748b'} borderColor="#f59e0b" bg="#fffbeb" />
+              </div>
+            </div>
+
+            {/* ── Tiempo de espera para autorización ── */}
+            <div style={{ border: '1px solid var(--g-line)', borderRadius: 14, overflow: 'hidden' }}>
+              {/* Encabezado */}
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--g-line)', background: 'var(--g-cream)' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--g-ink)', marginBottom: 4 }}>
+                  ⏱ ¿Qué tan rápido se autorizan los visitantes?
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--g-ink-3)' }}>
+                  Tiempo que pasa entre que se registra la solicitud y que un autorizador la aprueba
+                  {responseTimeStats.count > 0 && (
+                    <span style={{ marginLeft: 6, background: 'var(--g-green-soft)', color: 'var(--g-green-dark)', padding: '1px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
+                      {responseTimeStats.count} solicitudes analizadas
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {responseTimeStats.count === 0 ? (
+                <div style={{ padding: '32px 22px', textAlign: 'center', color: 'var(--g-ink-3)', fontSize: 13 }}>
+                  Aún no hay datos suficientes para calcular tiempos de respuesta.
+                </div>
+              ) : (
+                <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+                  {/* Métrica principal + records */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                    {/* Mediana — métrica principal */}
+                    {(() => {
+                      const m = responseTimeStats.median!;
+                      const isGood = m < 30, isMed = m < 120;
+                      return (
+                        <div style={{
+                          padding: '18px 20px', borderRadius: 12, textAlign: 'center',
+                          background: isGood ? '#f0fdf4' : isMed ? '#f7fee7' : '#fffbeb',
+                          border: `1.5px solid ${isGood ? '#bbf7d0' : isMed ? '#d9f99d' : '#fde68a'}`,
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--g-ink-3)', marginBottom: 6, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                            Espera típica
+                          </div>
+                          <div style={{ fontSize: 34, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', lineHeight: 1, color: isGood ? '#166534' : isMed ? '#3f6212' : '#854d0e' }}>
+                            {fmtMinutes(m)}
+                          </div>
+                          <div style={{ fontSize: 12, marginTop: 8, fontWeight: 600, color: isGood ? '#166534' : isMed ? '#3f6212' : '#854d0e' }}>
+                            {m < 5 ? '⚡ Autorización casi inmediata' : m < 30 ? '✓ Respuesta muy ágil' : m < 60 ? '✓ Dentro de la primera hora' : '✓ Autorización el mismo día'}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--g-ink-3)', marginTop: 5 }}>
+                            mediana · promedio {fmtMinutes(responseTimeStats.avg!)}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Autorización más rápida */}
+                    <div style={{ padding: '18px 20px', borderRadius: 12, background: '#f0fdf4', border: '1.5px solid #bbf7d0', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--g-ink-3)', marginBottom: 6, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                        Más rápida
+                      </div>
+                      <div style={{ fontSize: 34, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: '#166534', lineHeight: 1 }}>
+                        {fmtMinutes(responseTimeStats.min!)}
+                      </div>
+                      <div style={{ fontSize: 12, marginTop: 8, color: '#166534', fontWeight: 600 }}>
+                        {responseTimeStats.min! < 1 ? 'Aprobado al instante ⚡' : 'Aprobado muy rápido ✓'}
+                      </div>
+                    </div>
+
+                    {/* % dentro de 2 horas */}
+                    {(() => {
+                      const pct = responseTimeStats.count > 0 ? Math.round((responseTimeStats.withinTwoH / responseTimeStats.count) * 100) : 0;
+                      return (
+                        <div style={{ padding: '18px 20px', borderRadius: 12, background: '#f0fdf4', border: '1.5px solid #bbf7d0', textAlign: 'center' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--g-ink-3)', marginBottom: 6, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                            Autorizados en &lt; 2h
+                          </div>
+                          <div style={{ fontSize: 34, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: '#166534', lineHeight: 1 }}>
+                            {pct}%
+                          </div>
+                          <div style={{ fontSize: 12, marginTop: 8, color: '#166534', fontWeight: 600 }}>
+                            {responseTimeStats.withinTwoH} de {responseTimeStats.count} visitantes ✓
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Distribución */}
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--g-ink)', marginBottom: 12 }}>
+                      Distribución de tiempos de autorización
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {[
+                        { label: 'Menos de 5 minutos',   sublabel: 'Autorización inmediata',        icon: '⚡', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+                        { label: 'Entre 5 y 30 minutos', sublabel: 'Autorización en menos de media hora', icon: '✓', color: '#4d7c0f', bg: '#f7fee7', border: '#d9f99d' },
+                        { label: 'Entre 30 min y 2 h',   sublabel: 'Autorización en la misma jornada',  icon: '🕐', color: '#0369a1', bg: '#eff6ff', border: '#bae6fd' },
+                        { label: 'Más de 2 horas',        sublabel: 'Autorización en jornada posterior', icon: '📅', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
+                      ].map((row, i) => {
+                        const count = responseTimeStats.buckets[i];
+                        const pct = responseTimeStats.count > 0 ? (count / responseTimeStats.count) * 100 : 0;
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: count > 0 ? row.bg : '#f9fafb', border: `1px solid ${count > 0 ? row.border : '#f3f4f6'}` }}>
+                            <span style={{ fontSize: 18, flexShrink: 0, width: 28, textAlign: 'center' }}>{row.icon}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: count > 0 ? row.color : 'var(--g-ink-3)' }}>{row.label}</div>
+                              <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginTop: 1 }}>{row.sublabel}</div>
+                              <div style={{ marginTop: 6, height: 7, background: 'rgba(0,0,0,.07)', borderRadius: 4, overflow: 'hidden' }}>
+                                <div style={{ width: `${pct}%`, height: '100%', background: row.color, borderRadius: 4, transition: 'width .4s' }} />
+                              </div>
+                            </div>
+                            <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                              <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: count > 0 ? row.color : 'var(--g-ink-3)', lineHeight: 1 }}>{count}</div>
+                              <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginTop: 2 }}>{pct.toFixed(0)}%</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            {/* ── Charts: actividad + horas ── */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  Actividad — últimos 14 días
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-                    <span style={{ width: 10, height: 10, background: '#16a34a', borderRadius: 2, display: 'inline-block' }} />aprobados
-                    <span style={{ width: 10, height: 10, background: '#bbf7d0', borderRadius: 2, display: 'inline-block', marginLeft: 6 }} />total
-                  </span>
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 14, padding: '18px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)' }}>
+                    Actividad — últimos 14 días
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--g-ink-3)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ width: 10, height: 10, background: '#16a34a', borderRadius: 2, display: 'inline-block' }} />aprobados
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ width: 10, height: 10, background: '#bbf7d0', borderRadius: 2, display: 'inline-block' }} />total
+                    </span>
+                  </div>
                 </div>
                 <BarChart data={activityData} />
               </div>
-              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10 }}>
-                  Entradas por hora del día
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 14, padding: '18px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)' }}>
+                    Entradas por hora del día
+                  </div>
                   {hourlyData.some(d => d.count > 0) && (
-                    <span style={{ marginLeft: 8, fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--g-ink-2)' }}>
-                      · pico: {hourlyData.reduce((a, b) => b.count > a.count ? b : a).hour}:00h
-                    </span>
+                    <div style={{ fontSize: 11, color: 'var(--g-ink-2)', background: '#f0fdf4', padding: '3px 8px', borderRadius: 20, fontWeight: 600, border: '1px solid #bbf7d0' }}>
+                      pico: {hourlyData.reduce((a, b) => b.count > a.count ? b : a).hour}:00h
+                    </div>
                   )}
                 </div>
                 <HourlyBarChart data={hourlyData} />
               </div>
             </div>
 
-            {/* Donuts + duración + nodo */}
+            {/* ── Donuts + duración + nodo ── */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)' }}>Registros</div>
-                <DonutChart total={registros.length} segments={[{ value: regCounts.aprobados, color: '#22c55e' }, { value: regCounts.pendientes, color: '#fbbf24' }, { value: regCounts.negados, color: '#ef4444' }]} />
-                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
-                  {[{ color: '#22c55e', l: 'Aprobados', v: regCounts.aprobados }, { color: '#fbbf24', l: 'Pendientes', v: regCounts.pendientes }, { color: '#ef4444', l: 'Negados', v: regCounts.negados }].map(s => (
-                    <div key={s.l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-                      <span style={{ color: 'var(--g-ink-2)' }}>{s.l}</span>
-                      <span style={{ marginLeft: 'auto', fontWeight: 700 }}>{s.v}</span>
+              {/* Donut registros */}
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', alignSelf: 'flex-start' }}>Registros</div>
+                <DonutChart total={registros.length} segments={[{ value: regCounts.aprobados, color: '#22c55e' }, { value: regCounts.pendientes, color: '#fbbf24' }, { value: regCounts.negados, color: '#ef4444' }]} size={120} />
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  {[
+                    { color: '#22c55e', l: 'Aprobados',  v: regCounts.aprobados },
+                    { color: '#fbbf24', l: 'Pendientes', v: regCounts.pendientes },
+                    { color: '#ef4444', l: 'Negados',    v: regCounts.negados },
+                  ].map(s => (
+                    <div key={s.l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+                      <span style={{ color: 'var(--g-ink-2)', flex: 1 }}>{s.l}</span>
+                      <span style={{ fontWeight: 700 }}>{s.v}</span>
+                      {registros.length > 0 && (
+                        <span style={{ fontSize: 10, color: 'var(--g-ink-3)', minWidth: 30, textAlign: 'right' }}>
+                          {((s.v / registros.length) * 100).toFixed(0)}%
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
-              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)' }}>Solicitudes</div>
-                <DonutChart total={allSolicitudes.length} segments={[{ value: solCounts.autorizadas, color: '#22c55e' }, { value: solCounts.pendientes, color: '#fbbf24' }, { value: solCounts.rechazadas, color: '#ef4444' }]} />
-                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
-                  {[{ color: '#22c55e', l: 'Autorizadas', v: solCounts.autorizadas }, { color: '#fbbf24', l: 'Pendientes', v: solCounts.pendientes }, { color: '#ef4444', l: 'Rechazadas', v: solCounts.rechazadas }].map(s => (
-                    <div key={s.l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-                      <span style={{ color: 'var(--g-ink-2)' }}>{s.l}</span>
-                      <span style={{ marginLeft: 'auto', fontWeight: 700 }}>{s.v}</span>
+
+              {/* Donut solicitudes */}
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', alignSelf: 'flex-start' }}>Solicitudes</div>
+                <DonutChart total={allSolicitudes.length} segments={[{ value: solCounts.autorizadas, color: '#22c55e' }, { value: solCounts.pendientes, color: '#fbbf24' }, { value: solCounts.rechazadas, color: '#ef4444' }]} size={120} />
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                  {[
+                    { color: '#22c55e', l: 'Autorizadas', v: solCounts.autorizadas },
+                    { color: '#fbbf24', l: 'Pendientes',  v: solCounts.pendientes },
+                    { color: '#ef4444', l: 'Rechazadas',  v: solCounts.rechazadas },
+                  ].map(s => (
+                    <div key={s.l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+                      <span style={{ color: 'var(--g-ink-2)', flex: 1 }}>{s.l}</span>
+                      <span style={{ fontWeight: 700 }}>{s.v}</span>
+                      {allSolicitudes.length > 0 && (
+                        <span style={{ fontSize: 10, color: 'var(--g-ink-3)', minWidth: 30, textAlign: 'right' }}>
+                          {((s.v / allSolicitudes.length) * 100).toFixed(0)}%
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
-              <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              {/* Duración + nodo */}
+              <div style={{ border: '1px solid var(--g-line)', borderRadius: 14, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 8 }}>Duración promedio de visita</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: 'var(--g-green-dark)', lineHeight: 1 }}>
+                  <div style={{ fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: 'var(--g-green-dark)', lineHeight: 1 }}>
                     {visitDurationStats.avg === null ? '—' : fmtMinutes(visitDurationStats.avg)}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: 'var(--g-ink-3)', marginTop: 5 }}>
                     {visitDurationStats.count} registro{visitDurationStats.count !== 1 ? 's' : ''} con entrada y salida
                   </div>
                 </div>
-                <div style={{ borderTop: '1px solid var(--g-line)', paddingTop: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 8 }}>Por nodo de origen</div>
-                  {byNodo.length === 0
-                    ? <span style={{ fontSize: 12, color: 'var(--g-ink-3)' }}>Sin datos</span>
-                    : byNodo.slice(0, 4).map(n => {
+                {byNodo.length > 0 && (
+                  <div style={{ borderTop: '1px solid var(--g-line)', paddingTop: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 12 }}>Por nodo de origen</div>
+                    {byNodo.slice(0, 4).map((n, idx) => {
                       const pct = registros.length > 0 ? (n.count / registros.length) * 100 : 0;
+                      const nodeColors = ['#22c55e', '#4ade80', '#86efac', '#bbf7d0'];
                       return (
-                        <div key={n.nodo} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
-                          <span style={{ fontSize: 11, color: 'var(--g-ink-2)', minWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.nodo}</span>
-                          <div style={{ flex: 1, height: 8, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
-                            <div style={{ width: `${pct}%`, height: '100%', background: '#22c55e', borderRadius: 4 }} />
+                        <div key={n.nodo} style={{ marginBottom: 10 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, color: 'var(--g-ink-2)', fontWeight: 600 }}>
+                              {n.nodo === 'Sin nodo' ? 'Sin nodo' : `Nodo ${idx + 1}`}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 700 }}>
+                              {n.count} <span style={{ color: 'var(--g-ink-3)', fontWeight: 400 }}>({pct.toFixed(0)}%)</span>
+                            </span>
                           </div>
-                          <span style={{ fontSize: 11, fontWeight: 700, minWidth: 22, textAlign: 'right' }}>{n.count}</span>
+                          <div style={{ height: 8, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: nodeColors[idx] ?? '#22c55e', borderRadius: 4, transition: 'width .4s' }} />
+                          </div>
                         </div>
                       );
-                    })
-                  }
-                </div>
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* By authorizer */}
+            {/* ── Actividad por autorizador ── */}
             {byAuthorizer.length > 0 && (
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10 }}>Actividad por autorizador</div>
-                <div style={{ border: '1px solid var(--g-line)', borderRadius: 12, overflow: 'hidden' }}>
+                <SectionLabel>Actividad por autorizador</SectionLabel>
+                <div style={{ border: '1px solid var(--g-line)', borderRadius: 14, overflow: 'hidden' }}>
                   <table className="db-table">
                     <thead>
                       <tr>
@@ -915,8 +1194,8 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
                             <td style={{ textAlign: 'right', fontWeight: 700 }}>{a.total}</td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <div style={{ flex: 1, height: 8, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden', maxWidth: 100 }}>
-                                  <div style={{ width: `${rate}%`, height: '100%', background: rate >= 80 ? '#22c55e' : rate >= 50 ? '#f59e0b' : '#ef4444', borderRadius: 4 }} />
+                                <div style={{ flex: 1, height: 9, background: '#f1f5f9', borderRadius: 5, overflow: 'hidden', maxWidth: 110 }}>
+                                  <div style={{ width: `${rate}%`, height: '100%', background: rate >= 80 ? '#22c55e' : rate >= 50 ? '#f59e0b' : '#ef4444', borderRadius: 5, transition: 'width .4s' }} />
                                 </div>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: rate >= 80 ? '#166534' : rate >= 50 ? '#854d0e' : '#991b1b' }}>{rate.toFixed(0)}%</span>
                               </div>
@@ -930,43 +1209,61 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
               </div>
             )}
 
-            {/* Category breakdown */}
+            {/* ── Categoría de registros ── */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10 }}>Categoría de registros</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
+              <SectionLabel>Categoría de registros</SectionLabel>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
                 {[
-                  { icon: '🚗', l: 'Vehículos',     v: registros.filter(r => r.categoria === 'VEHICULO').length,      bg: 'var(--g-green-soft)' },
-                  { icon: '🚶', l: 'Peatones',       v: registros.filter(r => r.categoria === 'PEATON').length,        bg: '#fef9c3' },
-                  { icon: '📅', l: 'Fin de semana',  v: registros.filter(r => r.categoria === 'FIN_DE_SEMANA').length, bg: '#f3e8ff' },
-                  { icon: '—',  l: 'Sin categoría',  v: registros.filter(r => !r.categoria).length,                   bg: 'var(--g-cream)' },
-                ].map(c => (
-                  <div key={c.l} style={{ background: c.bg, borderRadius: 12, padding: '14px 16px', textAlign: 'center', border: '1px solid var(--g-line)' }}>
-                    <div style={{ fontSize: 20, marginBottom: 6 }}>{c.icon}</div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{c.v}</div>
-                    <div style={{ fontSize: 11, color: 'var(--g-ink-2)', marginTop: 4 }}>{c.l}</div>
-                  </div>
-                ))}
+                  { icon: '🚗', l: 'Vehículos',    v: categoryCounts.vehiculos, bg: 'var(--g-green-soft)', color: '#16a34a', border: '#22c55e' },
+                  { icon: '🚶', l: 'Peatones',      v: categoryCounts.peatones,  bg: '#fef9c3',            color: '#854d0e', border: '#fbbf24' },
+                  { icon: '📅', l: 'Fin de semana', v: categoryCounts.finde,     bg: '#f3e8ff',            color: '#7c3aed', border: '#a855f7' },
+                  { icon: '—',  l: 'Sin categoría', v: categoryCounts.sin,       bg: 'var(--g-cream)',     color: 'var(--g-ink-3)', border: 'var(--g-line)' },
+                ].map(c => {
+                  const pct = registros.length > 0 ? (c.v / registros.length) * 100 : 0;
+                  return (
+                    <div key={c.l} style={{ background: c.bg, borderRadius: 14, padding: '18px 18px 14px', border: `1px solid ${c.border}40` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <span style={{ fontSize: 24 }}>{c.icon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: c.color, background: 'rgba(255,255,255,.6)', padding: '2px 8px', borderRadius: 20 }}>{pct.toFixed(0)}%</span>
+                      </div>
+                      <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 30, fontWeight: 700, lineHeight: 1, color: c.color }}>{c.v}</div>
+                      <div style={{ fontSize: 11, color: 'var(--g-ink-2)', margin: '5px 0 12px', fontWeight: 600 }}>{c.l}</div>
+                      <div style={{ height: 5, background: 'rgba(0,0,0,.08)', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: c.color, borderRadius: 3, transition: 'width .4s' }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Recent */}
+            {/* ── Últimos registros ── */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--g-ink-3)', marginBottom: 10 }}>Últimos 10 registros — clic para ver detalle</div>
+              <SectionLabel>Últimos 10 registros — clic para ver detalle</SectionLabel>
               {registros.length === 0
                 ? <p style={{ color: 'var(--g-ink-3)', fontSize: 13 }}>Sin registros aún.</p>
                 : (
-                  <div className="db-table-wrap" style={{ borderRadius: 10, border: '1px solid var(--g-line)' }}>
+                  <div className="db-table-wrap" style={{ borderRadius: 12, border: '1px solid var(--g-line)', overflow: 'hidden' }}>
                     <table className="db-table">
-                      <thead><tr><th>Visitante</th><th>Placa</th><th>Tipo</th><th>Estado</th><th>Entrada</th><th></th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th>Visitante</th>
+                          <th>Placa</th>
+                          <th>Tipo</th>
+                          <th>Estado</th>
+                          <th>Entrada</th>
+                          <th></th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {registros.slice(0, 10).map(r => (
-                          <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => { setDetail({ kind: 'registro', data: r }); }}>
+                          <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setDetail({ kind: 'registro', data: r })}>
                             <td style={{ fontWeight: 600, fontSize: 13 }}>{visitorName(r)}</td>
                             <td><span className="db-placa" style={{ fontSize: 11 }}>{r.placa || '—'}</span></td>
                             <td><TipoBadge tipo={r.tipo} /></td>
                             <td><StatusBadge status={r.status} /></td>
-                            <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmt(r.entry_time)}</td>
-                            <td style={{ fontSize: 11, color: 'var(--g-green-dark)', fontWeight: 600 }}>Ver →</td>
+                            <td style={{ fontSize: 11, whiteSpace: 'nowrap', color: 'var(--g-ink-2)' }}>{fmt(r.entry_time)}</td>
+                            <td style={{ fontSize: 11, color: 'var(--g-green-dark)', fontWeight: 700 }}>Ver →</td>
                           </tr>
                         ))}
                       </tbody>

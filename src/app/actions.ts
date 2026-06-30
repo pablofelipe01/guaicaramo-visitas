@@ -9,6 +9,7 @@ import {
   createPersona,
   findAdminByUsuario,
   findAdminByCedula,
+  findActivoByCedula,
   updateAdminPassword,
   updateRegistroStatus,
   updatePlacaAutorizado,
@@ -44,7 +45,27 @@ async function getClientIp(): Promise<string> {
 export type VisitorResult =
   | { status: 'PENDIENTE' }
   | { status: 'SESSION_EXPIRED' }
+  | { status: 'DUPLICATE'; nombre: string; estado: string; vence?: string }
   | { status: 'ERROR'; message: string };
+
+export type DuplicateVisitorResult =
+  | { isDuplicate: false }
+  | { isDuplicate: true; nombre: string; estado: string; vence?: string };
+
+/**
+ * Verifica si ya existe un registro activo (PENDIENTE o AUTORIZADO) para la cédula dada.
+ * Falla silenciosamente para no bloquear el registro ante errores de red.
+ */
+export async function checkDuplicateVisitor(cedula: string): Promise<DuplicateVisitorResult> {
+  if (!/^\d{5,12}$/.test(cedula.trim())) return { isDuplicate: false };
+  try {
+    const found = await findActivoByCedula(cedula.trim());
+    if (!found) return { isDuplicate: false };
+    return { isDuplicate: true, nombre: found.nombre, estado: found.estado, vence: found.vence };
+  } catch {
+    return { isDuplicate: false };
+  }
+}
 
 /*
  * Por ahora solo crea el registro en la tabla Registros con status PENDIENTE.
@@ -95,6 +116,16 @@ export async function submitVisitorRequest(
   // el usuario esté activo, así que esto solo ocurre tras inactividad real.
   if (requireSession && !session) {
     return { status: 'SESSION_EXPIRED' };
+  }
+
+  // Bloquear si ya existe un registro activo con vencimiento vigente para esta cédula.
+  try {
+    const dup = await findActivoByCedula(cedulaTrim);
+    if (dup) {
+      return { status: 'DUPLICATE', nombre: dup.nombre, estado: dup.estado, vence: dup.vence };
+    }
+  } catch {
+    // Falla silenciosa: si la búsqueda falla no bloqueamos el registro.
   }
 
   // IDs de registros ya creados, para poder limpiarlos si algo falla a mitad

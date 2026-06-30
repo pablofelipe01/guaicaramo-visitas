@@ -258,6 +258,56 @@ export async function findPlacaByPlaca(placa: string): Promise<PlacaRecord | nul
   };
 }
 
+export interface ActiveVisitorRecord {
+  tabla: 'PLACAS' | 'PERSONAS';
+  id: string;
+  nombre: string;
+  estado: string;
+  vence?: string;
+}
+
+/**
+ * Busca si existe un registro activo (PENDIENTE o AUTORIZADO) con la misma cédula
+ * en PLACAS y PERSONAS. Ambas tablas se consultan en paralelo.
+ */
+export async function findActivoByCedula(cedula: string): Promise<ActiveVisitorRecord | null> {
+  const safe = cedula.replace(/"/g, '\\"');
+  // Solo bloquea si el registro está activo Y la fecha de vencimiento aún no ha pasado
+  // (o no tiene fecha, lo cual indica que fue creado sin expiración).
+  const formula = encodeURIComponent(
+    `AND({cedula}="${safe}",OR({estado}="PENDIENTE",{estado}="AUTORIZADO"),OR(BLANK({vence}),IS_AFTER({vence},NOW())))`,
+  );
+
+  const [resPlacas, resPersonas] = await Promise.all([
+    fetchWithRetry(
+      `${apiUrl(getTable('PLACAS'))}?filterByFormula=${formula}&maxRecords=1&fields[]=conductor&fields[]=estado&fields[]=vence`,
+      { headers: authHeaders(), cache: 'no-store' },
+    ),
+    fetchWithRetry(
+      `${apiUrl(getTable('PERSONAS'))}?filterByFormula=${formula}&maxRecords=1&fields[]=nombre&fields[]=estado&fields[]=vence`,
+      { headers: authHeaders(), cache: 'no-store' },
+    ),
+  ]);
+
+  if (resPlacas.ok) {
+    const data = await resPlacas.json();
+    if (data.records?.length) {
+      const r = data.records[0];
+      return { tabla: 'PLACAS', id: r.id, nombre: r.fields.conductor ?? '', estado: r.fields.estado ?? '', vence: r.fields.vence };
+    }
+  }
+
+  if (resPersonas.ok) {
+    const data = await resPersonas.json();
+    if (data.records?.length) {
+      const r = data.records[0];
+      return { tabla: 'PERSONAS', id: r.id, nombre: r.fields.nombre ?? '', estado: r.fields.estado ?? '', vence: r.fields.vence };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Crea una solicitud de visita en la tabla Placas.
  * autorizado = false hasta que un administrador la apruebe.

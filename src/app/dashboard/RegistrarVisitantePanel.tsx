@@ -8,7 +8,7 @@ import {
   IconArrow,
   IconCheck,
 } from '@/components/icons';
-import { submitVisitorRequest } from '@/app/actions';
+import { submitVisitorRequest, checkDuplicateVisitor } from '@/app/actions';
 import type { VisitorResult } from '@/app/actions';
 
 /* ── Local icons ── */
@@ -65,6 +65,15 @@ function FieldError({ id, msg }: { id: string; msg: string }) {
   );
 }
 
+function fmtVence(iso?: string) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+  } catch { return iso; }
+}
+
 /* ── Shared textarea style ── */
 const textareaStyle: React.CSSProperties = {
   width: '100%', resize: 'vertical', padding: '12px 14px',
@@ -87,6 +96,8 @@ export default function RegistrarVisitantePanel() {
   const [errors, setErrors]                     = useState<Record<string, string>>({});
   const [result, setResult]                     = useState<VisitorResult | null>(null);
   const [isPending, startTransition]            = useTransition();
+  const [dupWarning, setDupWarning]             = useState<{ nombre: string; estado: string; vence?: string } | null>(null);
+  const [isCheckingDup, setIsCheckingDup]       = useState(false);
 
   function validate(): Record<string, string> {
     const e: Record<string, string> = {};
@@ -132,34 +143,25 @@ export default function RegistrarVisitantePanel() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    console.log('[handleSubmit] Iniciando validación', {
-      cedula, nombre, placa, motivoVisita, fechaVencimiento,
-      tipoTransporte, acompanantes,
-    });
     const errs = validate();
-    console.log('[handleSubmit] Errores encontrados:', errs);
-    if (Object.keys(errs).length) {
-      setErrors(errs);
-      console.log('[handleSubmit] Validación fallida, mostrando errores');
-      return;
-    }
-    console.log('[handleSubmit] Validación exitosa, enviando solicitud');
+    if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
     startTransition(async () => {
       const res = await submitVisitorRequest(
         cedula, nombre, placa, motivoVisita, acompanantes, tipoTransporte,
         fechaVencimiento ? `${fechaVencimiento}T17:00` : undefined,
-        true, // requireSession: este formulario siempre corre autenticado
+        true,
         areaDestino || undefined,
         areaDestino === 'Administración' ? subAreaAdmin || undefined : undefined,
       );
-      console.log('[handleSubmit] Respuesta de servidor:', res);
       setResult(res);
     });
   }
 
   function reset() {
     setResult(null);
+    setDupWarning(null);
+    setIsCheckingDup(false);
     setCedula(''); setNombre(''); setPlaca('');
     setTipoTransporte('vehiculo'); setFechaVencimiento('');
     setAreaDestino(''); setSubAreaAdmin('');
@@ -210,6 +212,49 @@ export default function RegistrarVisitantePanel() {
             {tipoTransporte === 'peaton' && <> · <strong>A pie</strong></>}
           </p>
           <button className="btn btn-primary" onClick={reset}>Registrar otra visita</button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Duplicate state ── */
+  if (result?.status === 'DUPLICATE') {
+    const estadoLabel = result.estado === 'PENDIENTE' ? 'pendiente de autorización' : 'autorizado y vigente';
+    return (
+      <div style={{ maxWidth: 680, margin: '0 auto' }}>
+        <div className="db-card db-form-result-pad">
+          <div style={{
+            width: 64, height: 64, borderRadius: '50%',
+            background: 'rgba(245,158,11,0.12)', color: '#d97706',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 20px',
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 24, fontWeight: 600, color: '#92400e', marginBottom: 8 }}>
+            Ya existe un registro activo
+          </h3>
+          <p style={{ color: 'var(--g-ink-2)', marginBottom: 4 }}>
+            La cédula <strong>{cedula}</strong> ya tiene un registro {estadoLabel}.
+          </p>
+          {result.nombre && (
+            <p style={{ color: 'var(--g-ink-2)', marginBottom: 4 }}>
+              Registrado a nombre de: <strong>{result.nombre}</strong>
+            </p>
+          )}
+          {result.vence && (
+            <p style={{ fontSize: 13, color: 'var(--g-ink-3)', marginBottom: 4 }}>
+              Vence: <strong>{fmtVence(result.vence)}</strong>
+            </p>
+          )}
+          <p style={{ fontSize: 13, color: 'var(--g-ink-3)', marginBottom: 28 }}>
+            No es posible registrar la misma persona mientras tenga una solicitud activa vigente.
+            Primero debe vencer o ser rechazada la solicitud existente.
+          </p>
+          <button className="btn btn-ghost" onClick={reset}>Volver al formulario</button>
         </div>
       </div>
     );
@@ -281,12 +326,46 @@ export default function RegistrarVisitantePanel() {
               <div className="field-input-wrap">
                 <input id="rv-cedula" type="text" inputMode="numeric" pattern="\d*"
                   placeholder="Ej: 1018203040" value={cedula}
-                  onChange={e => setCedula(e.target.value.replace(/\D/g, ''))}
+                  onChange={e => { setCedula(e.target.value.replace(/\D/g, '')); setDupWarning(null); }}
+                  onBlur={() => {
+                    const val = cedula.trim();
+                    if (/^\d{5,12}$/.test(val)) {
+                      setIsCheckingDup(true);
+                      checkDuplicateVisitor(val).then(r => {
+                        setDupWarning(r.isDuplicate ? r : null);
+                        setIsCheckingDup(false);
+                      }).catch(() => setIsCheckingDup(false));
+                    }
+                  }}
                   autoComplete="off" disabled={isPending}
                   aria-describedby={errors.cedula ? 'rv-err-cedula' : undefined} />
                 <span className="field-icon"><IconIdCard width={18} height={18} /></span>
               </div>
               {errors.cedula && <FieldError id="rv-err-cedula" msg={errors.cedula} />}
+              {isCheckingDup && (
+                <span style={{ fontSize: 12, color: 'var(--g-ink-3)', marginTop: 4, display: 'block' }}>
+                  Verificando duplicado…
+                </span>
+              )}
+              {!isCheckingDup && dupWarning && (
+                <div style={{
+                  marginTop: 6, padding: '8px 12px',
+                  background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)',
+                  borderRadius: 8, fontSize: 13, color: '#92400e',
+                  display: 'flex', alignItems: 'flex-start', gap: 7,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <span>
+                    Ya existe un registro <strong>{dupWarning.estado}</strong> vigente para esta cédula
+                    {dupWarning.nombre && <> — <strong>{dupWarning.nombre}</strong></>}
+                    {dupWarning.vence && <> (vence {fmtVence(dupWarning.vence)})</>}.
+                    {' '}No se podrá guardar este registro.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="field">
@@ -419,6 +498,7 @@ export default function RegistrarVisitantePanel() {
                   <option value="">Selecciona la subárea…</option>
                   <option value="Ambiental">Ambiental</option>
                   <option value="Contabilidad">Contabilidad</option>
+                  
                   <option value="Ganadería">Ganadería</option>
                   <option value="Gestión humana">Gestión humana</option>
                   <option value="Planeación y formación">Planeación y formación</option>
