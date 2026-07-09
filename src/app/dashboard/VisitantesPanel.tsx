@@ -30,6 +30,7 @@ type Visitante = {
   creada?: string;
   notas?: string;
   acompañanteIds?: string[];
+  areas_destino?: string;
 };
 
 /* ── Colores de grupo — 6 tonos suaves que rotan ── */
@@ -160,6 +161,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       creada: p.creada,
       notas: p.notas,
       acompañanteIds: p.acompañanteIds,
+      areas_destino: p.areas_destino,
     })),
     ...personas.map(p => ({
       id: p.id,
@@ -176,6 +178,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       creada: p.creada,
       notas: p.notas,
       acompañanteIds: p.acompañanteIds,
+      areas_destino: p.areas_destino,
     })),
   ];
 
@@ -523,6 +526,8 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
               )}
               <dt style={detailLabel}>Cédula</dt>
               <dd style={detailValue}>{detail.cedula || '—'}</dd>
+              <dt style={detailLabel}>Área destino</dt>
+              <dd style={detailValue}>{detail.areas_destino || '—'}</dd>
               <dt style={detailLabel}>Fecha de registro</dt>
               <dd style={detailValue}>{formatDate(detail.creada)}</dd>
               <dt style={detailLabel}>Vence</dt>

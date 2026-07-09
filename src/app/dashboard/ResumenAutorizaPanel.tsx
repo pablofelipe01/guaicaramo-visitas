@@ -678,6 +678,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
           <FieldRow label="Placa">{p.placa}</FieldRow>
           <FieldRow label="Conductor">{p.conductor || '—'}</FieldRow>
           <FieldRow label="Cédula">{p.cedula || '—'}</FieldRow>
+          <FieldRow label="Área destino">{p.areas_destino || '—'}</FieldRow>
           <FieldRow label="Estado"><StatusBadge status={estado} /></FieldRow>
           <FieldRow label="Vence">{p.vence ? <span>{fmtDate(p.vence)} <VenceBadge vence={p.vence} /></span> : '—'}</FieldRow>
           <FieldRow label="Notas">{p.notas || <span style={{ color: 'var(--g-ink-3)' }}>—</span>}</FieldRow>
@@ -731,6 +732,7 @@ export default function ResumenAutorizaPanel({ placas, personas, registros, usua
           <FieldRow label="Nombre">{p.nombre}</FieldRow>
           <FieldRow label="Cédula">{p.cedula || '—'}</FieldRow>
           <FieldRow label="Cargo">{p.cargo || '—'}</FieldRow>
+          <FieldRow label="Área destino">{p.areas_destino || '—'}</FieldRow>
           <FieldRow label="Estado"><StatusBadge status={estado} /></FieldRow>
           <FieldRow label="Vence">{p.vence ? <span>{fmtDate(p.vence)} <VenceBadge vence={p.vence} /></span> : '—'}</FieldRow>
           <FieldRow label="Notas">{p.notas || <span style={{ color: 'var(--g-ink-3)' }}>—</span>}</FieldRow>

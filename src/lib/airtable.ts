@@ -144,6 +144,7 @@ export interface PlacaRecord {
   acompañanteIds?: string[];  // linked Personas record IDs (acompañantes en el vehículo)
   nodo_origen?: string;         // portería desde donde se reportó el intento
   ultimo_intento?: string;      // ISO datetime del último intento de ingreso
+  areas_destino?: string;       // área de destino del visitante
 }
 
 export interface RegistroCreateFields {
@@ -190,6 +191,7 @@ export interface PersonaRecord {
   acompañanteIds?: string[];
   nodo_origen?: string;         // portería desde donde se reportó el intento
   ultimo_intento?: string;      // ISO datetime del último intento de ingreso
+  areas_destino?: string;       // área de destino del visitante
 }
 
 export interface AdminRecord {
@@ -543,22 +545,27 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
   });
   const records = await fetchAllRecords(getTable('PLACAS'), params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return records.map((r: any): PlacaRecord => ({
-    id: r.id,
-    placa:      r.fields.placa      ?? '',
-    cedula:     r.fields.cedula     ?? '',
-    conductor:  r.fields.conductor  ?? '',
-    autorizado: r.fields.autorizado === true,
-    estado:     r.fields.estado     ?? undefined,
-    vence:      r.fields.vence,
-    notas:      r.fields.notas,
-    adminIds:   r.fields.Administradores ?? [],
-    responsable_visita: r.fields.responsable_visita,
-    autoriza_visita:    r.fields.autoriza_visita,
-    fecha_autorizado:   r.fields.fecha_autorizado,
-    creada:             r.fields.Creada,
-    acompañanteIds: r.fields.Acompañantes ?? [],
-  }));
+  return records.map((r: any): PlacaRecord => {
+    // Airtable devuelve campos por nombre, no por Field ID
+    const areaDestino = r.fields['Areas Destino'];
+    return {
+      id: r.id,
+      placa:      r.fields.placa      ?? '',
+      cedula:     r.fields.cedula     ?? '',
+      conductor:  r.fields.conductor  ?? '',
+      autorizado: r.fields.autorizado === true,
+      estado:     r.fields.estado     ?? undefined,
+      vence:      r.fields.vence,
+      notas:      r.fields.notas,
+      adminIds:   r.fields.Administradores ?? [],
+      responsable_visita: r.fields.responsable_visita,
+      autoriza_visita:    r.fields.autoriza_visita,
+      fecha_autorizado:   r.fields.fecha_autorizado,
+      creada:             r.fields.Creada,
+      acompañanteIds: r.fields.Acompañantes ?? [],
+      areas_destino: areaDestino,
+    };
+  });
 }
 
 /** Marca o desmarca `autorizado` en un registro de Placas.
@@ -633,22 +640,27 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
   });
   const records = await fetchAllRecords(getTable('PERSONAS'), params);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return records.map((r: any): PersonaRecord => ({
-    id: r.id,
-    cedula:          r.fields.cedula          ?? '',
-    nombre:          r.fields.nombre          ?? '',
-    autorizado:      r.fields.autorizado      === true,
-    estado:          r.fields.estado          ?? undefined,
-    vence:           r.fields.vence,
-    cargo:           r.fields.cargo,
-    notas:           r.fields.notas,
-    adminIds:        r.fields.Administradores ?? [],
-    responsable_visita: r.fields.responsable_visita,
-    autoriza_visita:    r.fields.autoriza_visita,
-    fecha_autorizado:   r.fields.fecha_autorizado,
-    creada:             r.fields.Creada,
-    acompañanteIds:  r.fields['Acompañantes'] ?? [],
-  }));
+  return records.map((r: any): PersonaRecord => {
+    // Airtable devuelve campos por nombre, no por Field ID
+    const areaDestino = r.fields['Area Destino'];
+    return {
+      id: r.id,
+      cedula:          r.fields.cedula          ?? '',
+      nombre:          r.fields.nombre          ?? '',
+      autorizado:      r.fields.autorizado      === true,
+      estado:          r.fields.estado          ?? undefined,
+      vence:           r.fields.vence,
+      cargo:           r.fields.cargo,
+      notas:           r.fields.notas,
+      adminIds:        r.fields.Administradores ?? [],
+      responsable_visita: r.fields.responsable_visita,
+      autoriza_visita:    r.fields.autoriza_visita,
+      fecha_autorizado:   r.fields.fecha_autorizado,
+      creada:             r.fields.Creada,
+      acompañanteIds:  r.fields['Acompañantes'] ?? [],
+      areas_destino: areaDestino,
+    };
+  });
 }
 
 /** Marca o desmarca `autorizado` en un registro de Personas.
