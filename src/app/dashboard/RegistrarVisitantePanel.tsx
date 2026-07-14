@@ -83,9 +83,22 @@ const textareaStyle: React.CSSProperties = {
   outline: 'none', transition: 'border-color .15s, box-shadow .15s',
 };
 
+// Todas las áreas disponibles en el sistema
+const AREAS_DISPONIBLES = [
+  'Administración',
+  'Agronómico',
+  'Báscula y almacén',
+  'Fondo de empleados',
+  'Logistica y transporte',
+  'Planta de beneficio',
+  'Sirius',
+];
+
 export default function RegistrarVisitantePanel() {
   const [cedula, setCedula]                     = useState('');
   const [nombre, setNombre]                     = useState('');
+
+  // Siempre mostrar todas las áreas disponibles - el usuario puede registrar visitantes para cualquier área
   const [tipoTransporte, setTipoTransporte]     = useState<'vehiculo' | 'peaton'>('vehiculo');
   const [placa, setPlaca]                       = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
@@ -455,12 +468,9 @@ export default function RegistrarVisitantePanel() {
                 }}
               >
                 <option value="">Selecciona el área de destino…</option>
-                <option value="Administración">Administración</option>
-                <option value="Agronómico">Agronómico</option>
-                <option value="Báscula y almacén">Báscula y almacén</option>
-                <option value="Fondo de empleados">Fondo de empleados</option>
-                <option value="Planta de beneficio">Planta de beneficio</option>
-                <option value="Sirius">Sirius</option>
+                {AREAS_DISPONIBLES.map(area => (
+                  <option key={area} value={area}>{area}</option>
+                ))}
               </select>
               <span style={{ position: 'absolute', right: 14, pointerEvents: 'none', color: 'var(--g-ink-3)', display: 'flex', alignItems: 'center' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>

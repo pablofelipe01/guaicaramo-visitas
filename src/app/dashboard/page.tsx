@@ -53,20 +53,24 @@ export default async function DashboardPage({
     }
 
     // Superadmin ve todo sin filtro de área
-    // Filtrar por área: solo para Autoriza
+    // Filtrar por área: solo para Autoriza con áreas específicas
     if (isAutoriza && areas.length > 0) {
-      const allAdmins = await getAdmins();
-      const matchingAdminIds = new Set(
-        allAdmins
-          .filter(a => a.areas.some(area => areas.includes(area)))
-          .map(a => a.id),
-      );
-      placas = placas.filter(p =>
-        !p.adminIds?.length || p.adminIds.some(id => matchingAdminIds.has(id)),
-      );
-      personas = personas.filter(p =>
-        !p.adminIds?.length || p.adminIds.some(id => matchingAdminIds.has(id)),
-      );
+      // Mapeo de áreas relacionadas - áreas destino que puede ver cada área de usuario
+      const areasDestinoPermitidas: Record<string, string[]> = {
+        'Logistica y transporte': ['Báscula y almacén', 'Logistica y transporte'],
+        // Agregar más mapeos según sea necesario
+      };
+
+      // Obtener destinos permitidos para las áreas del usuario
+      const destinosPermitidos = new Set<string>();
+      for (const area of areas) {
+        const destinos = areasDestinoPermitidas[area] || [area];
+        destinos.forEach(d => destinosPermitidos.add(d));
+      }
+
+      // Filtro EXCLUSIVO por área destino
+      placas = placas.filter(p => p.areas_destino && destinosPermitidos.has(p.areas_destino));
+      personas = personas.filter(p => p.areas_destino && destinosPermitidos.has(p.areas_destino));
       // Filtrar registros: solo los vinculados a placas o personas del área
       const filteredPlacaIds = new Set(placas.map(p => p.id));
       const filteredPersonaIds = new Set(personas.map(p => p.id));
@@ -123,6 +127,7 @@ export default async function DashboardPage({
             finDeSemana={finDeSemana}
             admins={admins}
             highlightId={highlightId}
+            areas={areas}
           />
         ) : (
           <RegistrarVisitantePanel />

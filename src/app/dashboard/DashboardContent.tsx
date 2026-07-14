@@ -23,14 +23,22 @@ interface Props {
   finDeSemana: FinDeSemanaRecord[];
   admins: AdminFullRecord[];
   highlightId?: string;
+  areas?: string[]; // áreas del usuario logueado
 }
 
-export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items, finDeSemana, admins, highlightId }: Props) {
+export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items, finDeSemana, admins, highlightId, areas = [] }: Props) {
   const isPorteria  = tipo === 'Porteria';
   const isAutoriza  = tipo === 'Autoriza';
-  const [tab, setTab] = useState<Tab>(isAutoriza ? 'resumen' : 'registros');
-
   const isSuperadmin = tipo === 'Superadmin';
+
+  // Vista completa (con Monitor) solo para Superadmin o Autoriza SIN áreas
+  const tieneVistaCompleta = isSuperadmin || (isAutoriza && areas.length === 0);
+
+  const [tab, setTab] = useState<Tab>(
+    tieneVistaCompleta ? 'resumen' :
+    isAutoriza ? 'visitantes' :
+    'registros'
+  );
 
   const pendientesCount =
     placas.filter(p => !p.autorizado && p.estado !== 'RECHAZADO').length +
@@ -40,31 +48,40 @@ export default function DashboardContent({ registros, placas, personas, usuario,
 
   return (
     <>
-      {(isAutoriza || tipo === 'Superadmin') && <NotificationBell />}
+      {tieneVistaCompleta && <NotificationBell />}
 
       {/* Tab switcher */}
       <div className="db-tabs" style={{ marginBottom: 24 }}>
-        <button
-          type="button"
-          className={`db-tab${tab === 'registros' ? ' active' : ''}`}
-          onClick={() => setTab('registros')}
-        >
-          Registros de visitas
-          <span className="db-tab-count">{stats.total}</span>
-        </button>
-        <button
-          type="button"
-          className={`db-tab${tab === 'visitantes' ? ' active' : ''}${visitantesPendientes > 0 ? ' has-pending' : ''}`}
-          onClick={() => setTab('visitantes')}
-        >
-          Visitantes
-          <span className="db-tab-count">{placas.length + personas.length}</span>
-          {pendientesCount > 0 && (
-            <span className="db-tab-alert" title={`${pendientesCount} pendiente(s) por autorizar`}>
-              {pendientesCount} pendiente{pendientesCount !== 1 ? 's' : ''}
-            </span>
-          )}
-        </button>
+        {/* Registros - visible para Porteria, Autoriza y Superadmin */}
+        {(isPorteria || isAutoriza || isSuperadmin) && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'registros' ? ' active' : ''}`}
+            onClick={() => setTab('registros')}
+          >
+            Registros de visitas
+            <span className="db-tab-count">{stats.total}</span>
+          </button>
+        )}
+
+        {/* Visitantes - visible para Porteria, Autoriza y Superadmin */}
+        {(isPorteria || isAutoriza || isSuperadmin) && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'visitantes' ? ' active' : ''}${visitantesPendientes > 0 ? ' has-pending' : ''}`}
+            onClick={() => setTab('visitantes')}
+          >
+            Visitantes
+            <span className="db-tab-count">{placas.length + personas.length}</span>
+            {pendientesCount > 0 && (
+              <span className="db-tab-alert" title={`${pendientesCount} pendiente(s) por autorizar`}>
+                {pendientesCount} pendiente{pendientesCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </button>
+        )}
+
+        {/* Registrar visitante - visible para todos excepto Porteria */}
         {!isPorteria && (
           <button
             type="button"
@@ -74,7 +91,9 @@ export default function DashboardContent({ registros, placas, personas, usuario,
             Registrar visitante
           </button>
         )}
-        {isAutoriza && (
+
+        {/* Monitor - solo para vista completa (Superadmin o Autoriza sin áreas) */}
+        {tieneVistaCompleta && (
           <button
             type="button"
             className={`db-tab${tab === 'resumen' ? ' active' : ''}`}
