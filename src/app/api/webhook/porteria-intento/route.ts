@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server';
 import { getPersonaById, getPlacaById, getAdminsAutorizaConPush } from '@/lib/airtable';
 import { sendPush } from '@/lib/webpush';
+import type { AdminPushRecord } from '@/lib/airtable';
 
 // Airtable llama este endpoint cuando nodo_origen se llena en PERSONAS o PLACAS.
 // El body que envía Airtable se configura en la automatización (ver README de la automatización).
@@ -8,6 +9,55 @@ interface WebhookBody {
   recordId?: string;
   tableName?: 'PERSONAS' | 'PLACAS';
   nodo?: string; // opcional — ya viene en el registro, pero útil para logs rápidos
+}
+
+/**
+ * Mapeo de áreas de usuario → áreas destino que puede autorizar.
+ * Un admin con área X puede autorizar visitas hacia áreas destino Y, Z.
+ *
+ * Ejemplo:
+ *   Admin con área "Logistica y transporte" → puede autorizar visitas a "Báscula y almacén" y "Logistica y transporte"
+ */
+const AREAS_DESTINO_PERMITIDAS: Record<string, string[]> = {
+  'Logistica y transporte': ['Báscula y almacén', 'Logistica y transporte'],
+  // Agregar más mapeos según se requiera
+  // 'Administración': ['Administración', 'Oficinas generales'],
+  // 'Producción': ['Producción', 'Planta', 'Almacén'],
+};
+
+/**
+ * Determina si un admin debe recibir notificación para un área destino específica.
+ *
+ * Lógica:
+ * - Superadmin: siempre recibe (sin filtro de área)
+ * - Autoriza sin áreas asignadas: recibe todas las notificaciones
+ * - Autoriza con áreas: solo recibe si el área destino del visitante está en su mapeo
+ */
+function debeNotificar(admin: AdminPushRecord, areaDestinoVisitante: string | undefined): boolean {
+  // Superadmin: siempre recibe
+  if (admin.tipo === 'Superadmin') {
+    return true;
+  }
+
+  // Autoriza sin áreas asignadas: recibe todo (backward compatibility)
+  if (!admin.areas || admin.areas.length === 0) {
+    return true;
+  }
+
+  // Si el visitante no tiene área destino, no notificar (no hay forma de matchear)
+  if (!areaDestinoVisitante) {
+    return false;
+  }
+
+  // Autoriza con áreas: verificar si alguna de sus áreas mapea al área destino del visitante
+  for (const areaAdmin of admin.areas) {
+    const destinosPermitidos = AREAS_DESTINO_PERMITIDAS[areaAdmin] || [areaAdmin];
+    if (destinosPermitidos.includes(areaDestinoVisitante)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -53,9 +103,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   const nombre = tableName === 'PERSONAS'
     ? (record as import('@/lib/airtable').PersonaRecord).nombre
     : (record as import('@/lib/airtable').PlacaRecord).conductor;
-  const cedula     = record.cedula;
-  const nodo       = record.nodo_origen ?? body.nodo ?? 'Portería';
-  const motivo     = record.notas ? ` — ${record.notas}` : '';
+  const cedula         = record.cedula;
+  const nodo           = record.nodo_origen ?? body.nodo ?? 'Portería';
+  const motivo         = record.notas ? ` — ${record.notas}` : '';
+  const areaDestino    = record.areas_destino; // área destino del visitante
 
   // 6. Obtener admins Autoriza y Superadmin con push_subscription registrada
   const admins     = await getAdminsAutorizaConPush();
@@ -66,26 +117,42 @@ export async function POST(request: NextRequest): Promise<Response> {
     return Response.json({ ok: true, notified: 0, reason: 'sin_suscriptores' });
   }
 
-  // 7. Construir payloads diferenciados por rol
+  // 7. Filtrar admins según área destino del visitante
+  const adminsANotificar = conPush.filter(admin => debeNotificar(admin, areaDestino));
+
+  if (!adminsANotificar.length) {
+    console.warn(
+      `[webhook/porteria-intento] Sin admins elegibles para área destino "${areaDestino}" — ${nombre} (${cedula})`,
+    );
+    return Response.json({
+      ok: true,
+      notified: 0,
+      reason: 'sin_admins_para_area',
+      areaDestino,
+    });
+  }
+
+  // 8. Construir payloads diferenciados por rol
   //    Autoriza → notificación accionable con link directo al registro
   //    Superadmin → informativa, sin presión de acción
+  const areaTag = areaDestino ? ` → ${areaDestino}` : '';
   const payloadAutoriza = {
     title: `🔔 Solicitud de ingreso — ${nodo}`,
-    body: `${nombre} (CC ${cedula}) espera autorización${motivo}.`,
+    body: `${nombre} (CC ${cedula}) espera autorización${areaTag}${motivo}.`,
     url: `/dashboard?panel=autoriza&id=${recordId}`,
     tag: `porteria-${recordId}`,
   };
 
   const payloadSuperadmin = {
     title: `ℹ️ Intento de ingreso — ${nodo}`,
-    body: `${nombre} (CC ${cedula}) está en portería. Un autorizador fue notificado.`,
+    body: `${nombre} (CC ${cedula}) está en portería${areaTag}. Un autorizador fue notificado.`,
     url: `/dashboard`,
     tag: `porteria-info-${recordId}`,
   };
 
-  // 8. Enviar push en paralelo, tolerando fallos individuales
+  // 9. Enviar push en paralelo, tolerando fallos individuales (solo a admins filtrados por área)
   const results = await Promise.allSettled(
-    conPush.map(admin =>
+    adminsANotificar.map(admin =>
       sendPush(
         admin.push_subscription!,
         admin.tipo === 'Autoriza' ? payloadAutoriza : payloadSuperadmin,
@@ -94,7 +161,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   );
 
   const notified = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
-  console.log(`[webhook/porteria-intento] Notificados: ${notified}/${conPush.length} — ${nombre} (${cedula})`);
+  console.log(
+    `[webhook/porteria-intento] Notificados: ${notified}/${adminsANotificar.length} ` +
+    `(área: "${areaDestino}") — ${nombre} (${cedula})`,
+  );
 
-  return Response.json({ ok: true, notified });
+  return Response.json({ ok: true, notified, areaDestino });
 }

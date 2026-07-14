@@ -972,11 +972,12 @@ export interface AdminPushRecord {
   id: string;
   nombre: string;
   tipo: string;
+  areas: string[]; // áreas asignadas al admin (para filtrar notificaciones)
   push_subscription: string | null; // PushSubscription serializada como JSON
 }
 
 /**
- * Devuelve los admins con tipo Autoriza o Superadmin junto con su push_subscription.
+ * Devuelve los admins con tipo Autoriza o Superadmin junto con su push_subscription y áreas.
  * Solo incluye registros donde el campo push_subscription no esté vacío.
  */
 export async function getAdminsAutorizaConPush(): Promise<AdminPushRecord[]> {
@@ -986,6 +987,7 @@ export async function getAdminsAutorizaConPush(): Promise<AdminPushRecord[]> {
   });
   params.append('fields[]', 'nombre');
   params.append('fields[]', 'tipo');
+  params.append('fields[]', 'areas');
   params.append('fields[]', 'push_subscription');
   const res = await fetchWithRetry(
     `${apiUrl(getTable('ADMINISTRADORES'))}?${params.toString()}`,
@@ -998,6 +1000,7 @@ export async function getAdminsAutorizaConPush(): Promise<AdminPushRecord[]> {
     id: r.id,
     nombre: r.fields.nombre ?? '',
     tipo: r.fields.tipo ?? '',
+    areas: r.fields.areas ?? [],
     push_subscription: r.fields.push_subscription ?? null,
   }));
 }

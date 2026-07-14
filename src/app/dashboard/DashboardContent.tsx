@@ -34,6 +34,9 @@ export default function DashboardContent({ registros, placas, personas, usuario,
   // Vista completa (con Monitor) solo para Superadmin o Autoriza SIN áreas
   const tieneVistaCompleta = isSuperadmin || (isAutoriza && areas.length === 0);
 
+  // Notificaciones push: todos los Autoriza y Superadmin (independiente de áreas)
+  const puedeRecibirNotificaciones = isAutoriza || isSuperadmin;
+
   const [tab, setTab] = useState<Tab>(
     tieneVistaCompleta ? 'resumen' :
     isAutoriza ? 'visitantes' :
@@ -48,7 +51,7 @@ export default function DashboardContent({ registros, placas, personas, usuario,
 
   return (
     <>
-      {tieneVistaCompleta && <NotificationBell />}
+      {puedeRecibirNotificaciones && <NotificationBell />}
 
       {/* Tab switcher */}
       <div className="db-tabs" style={{ marginBottom: 24 }}>
