@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
-import { getRegistros, getPlacas, getPersonas, getAdmins, getItems, getFinDeSemana, getAdminsAll, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord, type FinDeSemanaRecord, type AdminFullRecord } from '@/lib/airtable';
+import { getRegistros, getPlacas, getPersonas, getItems, getFinDeSemana, getAdminsAll, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord, type FinDeSemanaRecord, type AdminFullRecord } from '@/lib/airtable';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import DashboardContent from './DashboardContent';
 import { SESSION_COOKIE } from '@/lib/session';
@@ -55,31 +55,39 @@ export default async function DashboardPage({
     // Superadmin ve todo sin filtro de área
     // Filtrar por área: solo para Autoriza con áreas específicas
     if (isAutoriza && areas.length > 0) {
-      // Mapeo de áreas relacionadas - áreas destino que puede ver cada área de usuario
-      const areasDestinoPermitidas: Record<string, string[]> = {
-        'Logistica y transporte': ['Báscula y almacén', 'Logistica y transporte'],
-        // Agregar más mapeos según sea necesario
-      };
+      // Si el usuario tiene "Guaicaramo General" en sus áreas, puede ver TODAS las visitas
+      const tieneAccesoGeneral = areas.includes('Guaicaramo General');
 
-      // Obtener destinos permitidos para las áreas del usuario
-      const destinosPermitidos = new Set<string>();
-      for (const area of areas) {
-        const destinos = areasDestinoPermitidas[area] || [area];
-        destinos.forEach(d => destinosPermitidos.add(d));
+      if (!tieneAccesoGeneral) {
+        // Mapeo de áreas relacionadas - áreas destino que puede ver cada área de usuario
+        const areasDestinoPermitidas: Record<string, string[]> = {
+          'Logistica y transporte': ['Báscula y almacén', 'Logistica y transporte'],
+          // Agregar más mapeos según sea necesario
+        };
+
+        // Obtener destinos permitidos para las áreas del usuario
+        const destinosPermitidos = new Set<string>();
+        for (const area of areas) {
+          const destinos = areasDestinoPermitidas[area] || [area];
+          destinos.forEach(d => destinosPermitidos.add(d));
+        }
+
+        // Filtro EXCLUSIVO por área destino
+        // Si no tiene área destino definida, NO se muestra (debe especificarse)
+        placas = placas.filter(p => p.areas_destino && destinosPermitidos.has(p.areas_destino));
+        personas = personas.filter(p => p.areas_destino && destinosPermitidos.has(p.areas_destino));
+
+        // Filtrar registros: solo los vinculados a placas o personas del área
+        const filteredPlacaIds = new Set(placas.map(p => p.id));
+        const filteredPersonaIds = new Set(personas.map(p => p.id));
+        registros = registros.filter(r => {
+          if (!r.placaIds?.length && !r.personaIds?.length) return true;
+          if (r.placaIds?.some(id => filteredPlacaIds.has(id))) return true;
+          if (r.personaIds?.some(id => filteredPersonaIds.has(id))) return true;
+          return false;
+        });
       }
-
-      // Filtro EXCLUSIVO por área destino
-      placas = placas.filter(p => p.areas_destino && destinosPermitidos.has(p.areas_destino));
-      personas = personas.filter(p => p.areas_destino && destinosPermitidos.has(p.areas_destino));
-      // Filtrar registros: solo los vinculados a placas o personas del área
-      const filteredPlacaIds = new Set(placas.map(p => p.id));
-      const filteredPersonaIds = new Set(personas.map(p => p.id));
-      registros = registros.filter(r => {
-        if (!r.placaIds?.length && !r.personaIds?.length) return true;
-        if (r.placaIds?.some(id => filteredPlacaIds.has(id))) return true;
-        if (r.personaIds?.some(id => filteredPersonaIds.has(id))) return true;
-        return false;
-      });
+      // Si tiene acceso general, no se filtra nada (ve todo)
     }
   }
   const stats = {

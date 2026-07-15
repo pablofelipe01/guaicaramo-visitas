@@ -1018,6 +1018,26 @@ export async function updateAdminPushSubscription(
   return res.ok;
 }
 
+/** Actualiza el campo vence de un registro de Persona. */
+export async function updatePersonaVence(id: string, vence: string): Promise<boolean> {
+  const res = await fetchWithRetry(`${apiUrl(getTable('PERSONAS'))}/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ fields: { vence } }),
+  });
+  return res.ok;
+}
+
+/** Actualiza el campo vence de un registro de Placa. */
+export async function updatePlacaVence(id: string, vence: string): Promise<boolean> {
+  const res = await fetchWithRetry(`${apiUrl(getTable('PLACAS'))}/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ fields: { vence } }),
+  });
+  return res.ok;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Items (Órdenes de salida)
    ───────────────────────────────────────────────────────── */
