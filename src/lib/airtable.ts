@@ -1039,6 +1039,110 @@ export async function updatePlacaVence(id: string, vence: string): Promise<boole
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Registros — lectura por ID (usada por el webhook de ingreso)
+   ───────────────────────────────────────────────────────── */
+
+/** Devuelve un registro de la tabla Registros por su ID de Airtable. */
+export async function getRegistroById(id: string): Promise<RegistroRecord | null> {
+  const res = await fetchWithRetry(
+    `${apiUrl(getTable('REGISTROS'))}/${id}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r: any = await res.json();
+  return {
+    id: r.id,
+    placa:            r.fields.placa      ?? '',
+    tipo:             r.fields.tipo       ?? '',
+    cedula:           r.fields.cedula     ?? '',
+    entry_time:       r.fields.entry_time ?? '',
+    exit_time:        r.fields.exit_time,
+    approved_by:      r.fields.approved_by,
+    status:           r.fields.status     ?? 'PENDIENTE',
+    supervisor:       r.fields.supervisor,
+    comment:          r.fields.comment,
+    motivo_visita:    r.fields.motivo_visita,
+    nodo_origen:      r.fields.nodo_origen,
+    rejected_time:    r.fields.rejected_time,
+    nombre_visitante: r.fields.nombre_visitante,
+    categoria:        r.fields.categoria,
+    acompanantes:     r.fields.acompanantes,
+    conductores:      r.fields['conductor (from Placas)'] ?? [],
+    notas_placas:     r.fields['notas (from Placas)']     ?? [],
+    nombres_personas: r.fields['nombre (from Personas)']  ?? [],
+    notas_personas:   r.fields['notas (from Personas)']   ?? [],
+    placaIds:         r.fields['Placas']   ?? [],
+    personaIds:       r.fields['Personas'] ?? [],
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Área destino — resolución para notificaciones de ingreso
+   ───────────────────────────────────────────────────────── */
+
+/**
+ * Devuelve el área destino de un visitante leyendo su registro por ID.
+ * El nombre del campo difiere entre tablas: "Area Destino" en Personas,
+ * "Areas Destino" en Placas (igual que en getPersonas/getPlacas).
+ */
+export async function getAreaDestinoDeVisitante(
+  tabla: 'PERSONAS' | 'PLACAS',
+  id: string,
+): Promise<string | undefined> {
+  const res = await fetchWithRetry(
+    `${apiUrl(getTable(tabla))}/${id}`,
+    { headers: authHeaders(), cache: 'no-store' },
+  );
+  if (!res.ok) return undefined;
+  const r = await res.json();
+  const campo = tabla === 'PERSONAS' ? 'Area Destino' : 'Areas Destino';
+  return r.fields?.[campo] || undefined;
+}
+
+/** Busca el área destino por cédula, primero en Personas y luego en Placas. */
+async function getAreaDestinoPorCedula(cedula: string): Promise<string | undefined> {
+  const safe = cedula.replace(/"/g, '\\"');
+  const formula = encodeURIComponent(`{cedula}="${safe}"`);
+
+  for (const tabla of ['PERSONAS', 'PLACAS'] as const) {
+    const res = await fetchWithRetry(
+      `${apiUrl(getTable(tabla))}?filterByFormula=${formula}&maxRecords=1`,
+      { headers: authHeaders(), cache: 'no-store' },
+    );
+    if (!res.ok) continue;
+    const data = await res.json();
+    const campo = tabla === 'PERSONAS' ? 'Area Destino' : 'Areas Destino';
+    const area = data.records?.[0]?.fields?.[campo];
+    if (area) return area;
+  }
+
+  return undefined;
+}
+
+/**
+ * Resuelve el área destino asociada a un registro de la tabla Registros:
+ * primero por las Personas/Placas vinculadas y, si no hay vínculo, por cédula.
+ * Devuelve `undefined` si no se puede determinar.
+ */
+export async function getAreaDestinoDeRegistro(
+  registro: Pick<RegistroRecord, 'personaIds' | 'placaIds' | 'cedula'>,
+): Promise<string | undefined> {
+  for (const id of registro.personaIds ?? []) {
+    const area = await getAreaDestinoDeVisitante('PERSONAS', id);
+    if (area) return area;
+  }
+  for (const id of registro.placaIds ?? []) {
+    const area = await getAreaDestinoDeVisitante('PLACAS', id);
+    if (area) return area;
+  }
+  if (registro.cedula) {
+    return getAreaDestinoPorCedula(registro.cedula);
+  }
+  return undefined;
+}
+
+/* ─────────────────────────────────────────────────────────────
    Items (Órdenes de salida)
    ───────────────────────────────────────────────────────── */
 
