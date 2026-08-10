@@ -37,7 +37,7 @@ export function Hero() {
             <p className="hero-sub pretty">
               Plataforma de control y autorización de visitas para porterías, plantas, lotes
               y oficinas. Hecha para Recepción, líderes de área y vigilancia — en cualquier
-              dispositivo, en cualquier turno.
+              dispositivo, en cualquier turno operativo.
             </p>
             <div className="hero-ctas">
               <a href="/login" className="btn btn-primary btn-lg">
