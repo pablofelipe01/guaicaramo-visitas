@@ -22,6 +22,14 @@ import {
   type ItemCreateFields,
   deletePlacas,
   deletePersonas,
+  getPlacaById,
+  getPersonaById,
+  updatePlacaFields,
+  updatePersonaFields,
+  createAuditoria,
+  type VisitanteEditableFields,
+  type AuditoriaAccion,
+  type AuditoriaEntidad,
 } from '@/lib/airtable';
 import { isAllowed } from '@/lib/rate-limit';
 import { SESSION_COOKIE, SESSION_MAX_AGE } from '@/lib/session';
@@ -556,6 +564,7 @@ export async function approveRegistro(id: string): Promise<RegistroActionResult>
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'No tienes permiso para aprobar registros.' };
 
   const ok = await updateRegistroStatus(id, 'APROBADO', { supervisor: session.usuario });
+  if (ok) await audit('APROBAR_REGISTRO', 'REGISTRO', id, { detalle: { status: 'APROBADO', supervisor: session.usuario } });
   return ok ? { ok: true } : { ok: false, message: 'Error al actualizar el registro.' };
 }
 
@@ -572,6 +581,7 @@ export async function rejectRegistro(
     comment: comment.trim() || 'Rechazado por administrador.',
     rejected_time: new Date().toISOString(),
   });
+  if (ok) await audit('RECHAZAR_REGISTRO', 'REGISTRO', id, { detalle: { status: 'NEGADO', comment: comment.trim() || 'Rechazado por administrador.' } });
   return ok ? { ok: true } : { ok: false, message: 'Error al actualizar el registro.' };
 }
 
@@ -585,6 +595,7 @@ export async function authorizePlaca(id: string): Promise<RegistroActionResult> 
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const adminName = `${session.cedula} - ${session.nombre || session.usuario}`.replace(/^-\s*/, '').trim();
   const ok = await updatePlacaAutorizado(id, true, adminName);
+  if (ok) await audit('AUTORIZAR', 'PLACA', id, { detalle: { autorizado: true, estado: 'AUTORIZADO' } });
   return ok ? { ok: true } : { ok: false, message: 'Error al autorizar la placa.' };
 }
 
@@ -593,6 +604,7 @@ export async function unauthorizePlaca(id: string): Promise<RegistroActionResult
   if (!session) return { ok: false, message: 'No autorizado.' };
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const ok = await updatePlacaAutorizado(id, false);
+  if (ok) await audit('REVOCAR', 'PLACA', id, { detalle: { autorizado: false, estado: 'PENDIENTE' } });
   return ok ? { ok: true } : { ok: false, message: 'Error al revocar la placa.' };
 }
 
@@ -601,6 +613,7 @@ export async function denyPlaca(id: string): Promise<RegistroActionResult> {
   if (!session) return { ok: false, message: 'No autorizado.' };
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const ok = await updatePlacaAutorizado(id, false, undefined, 'RECHAZADO');
+  if (ok) await audit('DENEGAR', 'PLACA', id, { detalle: { autorizado: false, estado: 'RECHAZADO' } });
   return ok ? { ok: true } : { ok: false, message: 'Error al denegar la placa.' };
 }
 
@@ -614,6 +627,7 @@ export async function authorizePersona(id: string): Promise<RegistroActionResult
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const adminName = `${session.cedula} - ${session.nombre || session.usuario}`.replace(/^-\s*/, '').trim();
   const ok = await updatePersonaAutorizado(id, true, adminName);
+  if (ok) await audit('AUTORIZAR', 'PERSONA', id, { detalle: { autorizado: true, estado: 'AUTORIZADO' } });
   return ok ? { ok: true } : { ok: false, message: 'Error al autorizar la persona.' };
 }
 
@@ -622,6 +636,7 @@ export async function unauthorizePersona(id: string): Promise<RegistroActionResu
   if (!session) return { ok: false, message: 'No autorizado.' };
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const ok = await updatePersonaAutorizado(id, false);
+  if (ok) await audit('REVOCAR', 'PERSONA', id, { detalle: { autorizado: false, estado: 'PENDIENTE' } });
   return ok ? { ok: true } : { ok: false, message: 'Error al revocar la persona.' };
 }
 
@@ -630,6 +645,7 @@ export async function denyPersona(id: string): Promise<RegistroActionResult> {
   if (!session) return { ok: false, message: 'No autorizado.' };
   if (session.tipo !== 'Autoriza') return { ok: false, message: 'Sin permiso.' };
   const ok = await updatePersonaAutorizado(id, false, undefined, 'RECHAZADO');
+  if (ok) await audit('DENEGAR', 'PERSONA', id, { detalle: { autorizado: false, estado: 'RECHAZADO' } });
   return ok ? { ok: true } : { ok: false, message: 'Error al denegar la persona.' };
 }
 
@@ -699,4 +715,204 @@ export async function submitOrdenSalida(
   const result = await createItem(fields);
   if (!result.ok) return { ok: false, message: result.error ?? 'Error al guardar.' };
   return { ok: true, id: result.id };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Auditoría — bitácora de quién hizo qué y cuándo
+   ───────────────────────────────────────────────────────── */
+
+/**
+ * Registra una acción administrativa en la tabla Auditoria.
+ * Toma el autor de la sesión activa y la IP de la request.
+ * Nunca lanza: una falla de auditoría no debe revertir la acción del usuario.
+ */
+async function audit(
+  accion: AuditoriaAccion,
+  entidad: AuditoriaEntidad,
+  entidadId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  extra?: { referencia?: string; detalle?: Record<string, any> },
+): Promise<void> {
+  try {
+    const session = await getSession();
+    const ip = await getClientIp();
+    await createAuditoria({
+      accion,
+      entidad,
+      entidad_id: entidadId,
+      referencia: extra?.referencia,
+      usuario: session?.usuario,
+      nombre:  session?.nombre,
+      cedula:  session?.cedula,
+      rol:     session?.tipo,
+      ip,
+      detalle: extra?.detalle,
+    });
+  } catch (e) {
+    console.error('[audit] no se pudo registrar la acción', accion, entidad, entidadId, e);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Edición de visitas pendientes — solo Superadmin
+   ───────────────────────────────────────────────────────── */
+
+/** Campos que el Superadmin puede modificar en una solicitud pendiente. */
+export interface EditarVisitaInput {
+  placa?: string;         // solo vehículos
+  conductor?: string;     // solo vehículos
+  nombre?: string;        // solo personas
+  cargo?: string;         // solo personas
+  cedula?: string;
+  /** "YYYY-MM-DDTHH:mm" en hora local de la finca; cadena vacía limpia el vencimiento. */
+  vence?: string;
+  notas?: string;
+  motivoVisita?: string;
+  areaDestino?: string;
+  subAreaAdmin?: string;
+}
+
+export type EditarVisitaResult =
+  | { ok: true; cambios: number }
+  | { ok: false; message: string; errors?: Record<string, string> };
+
+/**
+ * Edita una solicitud de visita que sigue PENDIENTE (ni autorizada ni rechazada).
+ * Restringido a Superadmin. Cada edición queda registrada en la tabla Auditoria
+ * con el detalle antes/después de cada campo modificado.
+ */
+export async function editarVisitaPendiente(
+  id: string,
+  visitType: 'vehiculo' | 'persona',
+  input: EditarVisitaInput,
+): Promise<EditarVisitaResult> {
+  const session = await getSession();
+  if (!session) return { ok: false, message: 'No autorizado.' };
+  if (session.tipo !== 'Superadmin') {
+    return { ok: false, message: 'Solo el Superadmin puede editar visitas pendientes.' };
+  }
+  if (!id) return { ok: false, message: 'Falta el identificador de la visita.' };
+
+  // ── Estado actual: solo se editan solicitudes todavía pendientes ──
+  const actual = visitType === 'vehiculo'
+    ? await getPlacaById(id)
+    : await getPersonaById(id);
+  if (!actual) return { ok: false, message: 'La visita ya no existe.' };
+  if (actual.autorizado || actual.estado === 'RECHAZADO') {
+    return {
+      ok: false,
+      message: 'Solo se pueden editar visitas pendientes. Revoca la autorización o restaura la solicitud primero.',
+    };
+  }
+
+  // ── Validación ──
+  const errors: Record<string, string> = {};
+  const trim = (v?: string) => (v ?? '').trim();
+
+  const cedula = trim(input.cedula);
+  if (input.cedula !== undefined) {
+    if (!cedula) errors.cedula = 'Ingresa el número de cédula';
+    else if (!/^\d{5,12}$/.test(cedula)) errors.cedula = 'Solo números, entre 5 y 12 dígitos';
+  }
+
+  const placa = trim(input.placa).toUpperCase();
+  if (visitType === 'vehiculo' && input.placa !== undefined) {
+    if (!placa) errors.placa = 'Ingresa la placa del vehículo';
+    else if (!/^[A-Z0-9]{5,7}$/.test(placa)) errors.placa = 'Formato inválido (ej: ABC123)';
+  }
+
+  const conductor = trim(input.conductor);
+  if (visitType === 'vehiculo' && input.conductor !== undefined) {
+    if (!conductor) errors.conductor = 'Ingresa el nombre del conductor';
+    else if (conductor.length < 4) errors.conductor = 'Nombre demasiado corto';
+  }
+
+  const nombre = trim(input.nombre);
+  if (visitType === 'persona' && input.nombre !== undefined) {
+    if (!nombre) errors.nombre = 'Ingresa el nombre completo';
+    else if (nombre.length < 4) errors.nombre = 'Nombre demasiado corto';
+  }
+
+  if (input.areaDestino === 'Administración' && !trim(input.subAreaAdmin)) {
+    errors.subAreaAdmin = 'Selecciona la subárea de administración';
+  }
+
+  let venceISO: string | null | undefined;
+  if (input.vence !== undefined) {
+    if (!trim(input.vence)) {
+      venceISO = null; // limpia el vencimiento
+    } else {
+      const tzOffset = process.env.APP_TZ_OFFSET ?? '-05:00';
+      const d = new Date(`${trim(input.vence)}${tzOffset}`);
+      if (isNaN(d.getTime())) errors.vence = 'Fecha inválida';
+      else venceISO = d.toISOString();
+    }
+  }
+
+  if (Object.keys(errors).length) {
+    return { ok: false, message: 'Revisa los campos marcados.', errors };
+  }
+
+  // ── Diff: solo se envían los campos que realmente cambian ──
+  const areaDestino = input.areaDestino !== undefined
+    ? (trim(input.areaDestino)
+        ? (trim(input.subAreaAdmin)
+            ? `${trim(input.areaDestino)} - ${trim(input.subAreaAdmin)}`
+            : trim(input.areaDestino))
+        : '')
+    : undefined;
+
+  const propuesto: VisitanteEditableFields = {
+    ...(input.cedula !== undefined ? { cedula } : {}),
+    ...(visitType === 'vehiculo' && input.placa     !== undefined ? { placa }     : {}),
+    ...(visitType === 'vehiculo' && input.conductor !== undefined ? { conductor } : {}),
+    ...(visitType === 'persona'  && input.nombre    !== undefined ? { nombre }    : {}),
+    ...(visitType === 'persona'  && input.cargo     !== undefined ? { cargo: trim(input.cargo) } : {}),
+    ...(input.notas        !== undefined ? { notas: trim(input.notas) }                : {}),
+    ...(input.motivoVisita !== undefined ? { motivo_visita: trim(input.motivoVisita) } : {}),
+    ...(areaDestino        !== undefined ? { areas_destino: areaDestino }              : {}),
+    ...(venceISO           !== undefined ? { vence: venceISO }                         : {}),
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const previo = actual as unknown as Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cambios: Record<string, { antes: any; despues: any }> = {};
+  const aEnviar: VisitanteEditableFields = {};
+
+  for (const [key, despues] of Object.entries(propuesto)) {
+    const antes = previo[key] ?? null;
+    const iguales = key === 'vence'
+      // `vence` se compara como instante para ignorar diferencias de formato ISO.
+      ? (antes ? new Date(antes).getTime() : null) === (despues ? new Date(despues as string).getTime() : null)
+      : (antes ?? '') === (despues ?? '');
+    if (iguales) continue;
+    cambios[key] = { antes: antes ?? null, despues: despues ?? null };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (aEnviar as any)[key] = despues;
+  }
+
+  if (Object.keys(cambios).length === 0) return { ok: true, cambios: 0 };
+
+  const ok = visitType === 'vehiculo'
+    ? await updatePlacaFields(id, aEnviar)
+    : await updatePersonaFields(id, aEnviar);
+
+  if (!ok) return { ok: false, message: 'Error al guardar los cambios en Airtable.' };
+
+  const referencia = visitType === 'vehiculo'
+    ? (aEnviar.placa ?? (actual as { placa?: string }).placa ?? '')
+    : (aEnviar.nombre ?? (actual as { nombre?: string }).nombre ?? '');
+
+  await audit('EDITAR', visitType === 'vehiculo' ? 'PLACA' : 'PERSONA', id, {
+    referencia: `${referencia}${actual.cedula ? ` (${actual.cedula})` : ''}`.trim(),
+    detalle: {
+      tipo_visitante: visitType,
+      estado_al_editar: actual.estado ?? 'PENDIENTE',
+      campos_modificados: Object.keys(cambios),
+      cambios,
+    },
+  });
+
+  return { ok: true, cambios: Object.keys(cambios).length };
 }

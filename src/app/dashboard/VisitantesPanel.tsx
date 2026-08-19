@@ -6,6 +6,7 @@ import type { PlacaRecord, PersonaRecord } from '@/lib/airtable';
 import { authorizePlaca, unauthorizePlaca, authorizePersona, unauthorizePersona, denyPlaca, denyPersona } from '@/app/actions';
 import { usePagination } from '@/lib/usePagination';
 import Pagination from './Pagination';
+import EditarVisitaModal from './EditarVisitaModal';
 
 interface Props {
   placas: PlacaRecord[];
@@ -31,6 +32,7 @@ type Visitante = {
   notas?: string;
   acompañanteIds?: string[];
   areas_destino?: string;
+  motivo_visita?: string;
 };
 
 /* ── Colores de grupo — 6 tonos suaves que rotan ── */
@@ -134,6 +136,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
   const [isPending, startTransition] = useTransition();
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<Visitante | null>(null);
+  const [editing, setEditing] = useState<Visitante | null>(null);
 
   function toggleNote(id: string) {
     setExpandedNotes(prev => {
@@ -144,6 +147,8 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
   }
 
   const canAuthorize = tipo === 'Autoriza';
+  // La edición de solicitudes pendientes está reservada al Superadmin.
+  const canEdit = tipo === 'Superadmin';
 
   const visitantes: Visitante[] = [
     ...placas.map(p => ({
@@ -162,6 +167,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       notas: p.notas,
       acompañanteIds: p.acompañanteIds,
       areas_destino: p.areas_destino,
+      motivo_visita: p.motivo_visita,
     })),
     ...personas.map(p => ({
       id: p.id,
@@ -179,6 +185,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       notas: p.notas,
       acompañanteIds: p.acompañanteIds,
       areas_destino: p.areas_destino,
+      motivo_visita: p.motivo_visita,
     })),
   ];
 
@@ -248,8 +255,6 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
     });
   }
 
-  const isSuperadmin = tipo === 'Superadmin';
-
   const FILTERS: { key: Filter; label: string; count: number }[] = [
     { key: 'todos',       label: 'Todos',       count: counts.todos       },
     { key: 'pendientes',  label: 'Pendientes',  count: counts.pendientes  },
@@ -312,7 +317,7 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                 <th>Vence</th>
                 <th>Registrado por</th>
                 <th>Notas</th>
-                {canAuthorize && <th style={{ textAlign: 'right' }}>Acción</th>}
+                {(canAuthorize || canEdit) && <th style={{ textAlign: 'right' }}>Acción</th>}
               </tr>
             </thead>
             <tbody>
@@ -411,9 +416,21 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                         {v.notas || '—'}
                       </span>
                     </td>
-                    {canAuthorize && (
+                    {(canAuthorize || canEdit) && (
                       <td data-label="Acción" style={{ textAlign: 'right', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                        {v.autorizado ? (
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {/* Editar: solo Superadmin y solo mientras la solicitud siga pendiente */}
+                        {canEdit && !v.autorizado && v.estado !== 'RECHAZADO' && (
+                          <button
+                            onClick={() => setEditing(v)}
+                            disabled={isPending}
+                            className="btn btn-ghost btn-sm"
+                            title="Editar los datos de esta visita pendiente"
+                          >
+                            Editar
+                          </button>
+                        )}
+                        {canAuthorize && (v.autorizado ? (
                           <button
                             onClick={() => handleAuthorize(v.id, v.tipo, false)}
                             disabled={isPending}
@@ -449,7 +466,8 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
                               Denegar
                             </button>
                           </div>
-                        )}
+                        ))}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -461,6 +479,26 @@ export default function VisitantesPanel({ placas, personas, tipo }: Props) {
       )}
 
       {filtered.length > 0 && <Pagination pagination={pagination} label="visitantes" />}
+
+      {editing && (
+        <EditarVisitaModal
+          visita={{
+            id: editing.id,
+            tipo: editing.tipo,
+            placa: editing.placa,
+            conductor: editing.conductor,
+            nombre: editing.nombre,
+            cargo: editing.cargo,
+            cedula: editing.cedula,
+            vence: editing.vence,
+            notas: editing.notas,
+            motivo_visita: editing.motivo_visita,
+            areas_destino: editing.areas_destino,
+          }}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); setDetail(null); router.refresh(); }}
+        />
+      )}
 
       {detail && (
         <div className="db-modal-overlay" onClick={() => setDetail(null)}>

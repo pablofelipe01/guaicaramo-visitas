@@ -6,7 +6,7 @@
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 
-function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' | 'FINDE_SEMANA' | 'ITEMS'): string {
+function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' | 'FINDE_SEMANA' | 'ITEMS' | 'AUDITORIA'): string {
   const env: Record<string, string | undefined> = {
     ADMINISTRADORES: process.env.AIRTABLE_TABLE_ADMINISTRADORES,
     PLACAS:          process.env.AIRTABLE_TABLE_PLACAS,
@@ -14,6 +14,7 @@ function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' 
     PERSONAS:        process.env.AIRTABLE_TABLE_PERSONAS,
     FINDE_SEMANA:    process.env.AIRTABLE_TABLE_FINDE_SEMANA,
     ITEMS:           process.env.AIRTABLE_TABLE_ITEMS,
+    AUDITORIA:       process.env.AIRTABLE_TABLE_AUDITORIA,
   };
   const val = env[name];
   if (!val) throw new Error(`Falta variable de entorno AIRTABLE_TABLE_${name}`);
@@ -145,6 +146,7 @@ export interface PlacaRecord {
   nodo_origen?: string;         // portería desde donde se reportó el intento
   ultimo_intento?: string;      // ISO datetime del último intento de ingreso
   areas_destino?: string;       // área de destino del visitante
+  motivo_visita?: string;       // motivo declarado de la visita
 }
 
 export interface RegistroCreateFields {
@@ -192,6 +194,7 @@ export interface PersonaRecord {
   nodo_origen?: string;         // portería desde donde se reportó el intento
   ultimo_intento?: string;      // ISO datetime del último intento de ingreso
   areas_destino?: string;       // área de destino del visitante
+  motivo_visita?: string;       // motivo declarado de la visita
 }
 
 export interface AdminRecord {
@@ -564,6 +567,7 @@ export async function getPlacas(): Promise<PlacaRecord[]> {
       creada:             r.fields.Creada,
       acompañanteIds: r.fields.Acompañantes ?? [],
       areas_destino: areaDestino,
+      motivo_visita: r.fields.motivo_visita,
     };
   });
 }
@@ -659,6 +663,7 @@ export async function getPersonas(): Promise<PersonaRecord[]> {
       creada:             r.fields.Creada,
       acompañanteIds:  r.fields['Acompañantes'] ?? [],
       areas_destino: areaDestino,
+      motivo_visita:   r.fields.motivo_visita,
     };
   });
 }
@@ -932,6 +937,8 @@ export async function getPersonaById(id: string): Promise<PersonaRecord | null> 
     acompañanteIds:  r.fields['Acompañantes'] ?? [],
     nodo_origen:     r.fields.nodo_origen,
     ultimo_intento:  r.fields.ultimo_intento,
+    areas_destino:   r.fields['Area Destino'],
+    motivo_visita:   r.fields.motivo_visita,
   };
 }
 
@@ -961,6 +968,8 @@ export async function getPlacaById(id: string): Promise<PlacaRecord | null> {
     acompañanteIds: r.fields.Acompañantes ?? [],
     nodo_origen:    r.fields.nodo_origen,
     ultimo_intento: r.fields.ultimo_intento,
+    areas_destino:  r.fields['Areas Destino'],
+    motivo_visita:  r.fields.motivo_visita,
   };
 }
 
@@ -1175,4 +1184,196 @@ export async function createItem(
   }
   const data = await res.json();
   return { ok: true, id: data.records?.[0]?.id };
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Visitantes — edición de solicitudes pendientes
+   ───────────────────────────────────────────────────────── */
+
+/** Campos editables de una solicitud de visita todavía pendiente. */
+export interface VisitanteEditableFields {
+  placa?: string;         // solo vehículos
+  conductor?: string;     // solo vehículos
+  nombre?: string;        // solo personas
+  cargo?: string;         // solo personas
+  cedula?: string;
+  vence?: string | null;  // ISO datetime; null limpia el campo
+  notas?: string;
+  motivo_visita?: string;
+  areas_destino?: string;
+}
+
+/** Nombre (o Field ID) de la columna "área destino" en cada tabla.
+ *  Airtable acepta ambos; se prefiere el Field ID si está configurado
+ *  porque sobrevive a renombres de la columna. */
+function areaDestinoKey(tabla: 'PLACAS' | 'PERSONAS'): string {
+  return tabla === 'PLACAS'
+    ? process.env.AIRTABLE_FIELD_AREA_DESTINO_PLACAS  || 'Areas Destino'
+    : process.env.AIRTABLE_FIELD_AREA_DESTINO_PERSONAS || 'Area Destino';
+}
+
+/** Traduce los campos editables al payload que espera Airtable. */
+function toAirtableFields(
+  tabla: 'PLACAS' | 'PERSONAS',
+  fields: VisitanteEditableFields,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const f: Record<string, any> = {};
+  if (fields.placa         !== undefined) f.placa         = fields.placa;
+  if (fields.conductor     !== undefined) f.conductor     = fields.conductor;
+  if (fields.nombre        !== undefined) f.nombre        = fields.nombre;
+  if (fields.cargo         !== undefined) f.cargo         = fields.cargo;
+  if (fields.cedula        !== undefined) f.cedula        = fields.cedula;
+  if (fields.vence         !== undefined) f.vence         = fields.vence;
+  if (fields.notas         !== undefined) f.notas         = fields.notas;
+  if (fields.motivo_visita !== undefined) f.motivo_visita = fields.motivo_visita;
+  if (fields.areas_destino !== undefined) f[areaDestinoKey(tabla)] = fields.areas_destino;
+  return f;
+}
+
+async function patchVisitante(
+  tabla: 'PLACAS' | 'PERSONAS',
+  id: string,
+  fields: VisitanteEditableFields,
+): Promise<boolean> {
+  const f = toAirtableFields(tabla, fields);
+  if (Object.keys(f).length === 0) return true; // nada que cambiar
+  const res = await fetchWithRetry(`${apiUrl(getTable(tabla))}/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ fields: f }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error(`[patchVisitante:${tabla}] Airtable error`, res.status, JSON.stringify(err));
+  }
+  return res.ok;
+}
+
+/** Actualiza los datos de una solicitud en Placas. */
+export async function updatePlacaFields(id: string, fields: VisitanteEditableFields): Promise<boolean> {
+  return patchVisitante('PLACAS', id, fields);
+}
+
+/** Actualiza los datos de una solicitud en Personas. */
+export async function updatePersonaFields(id: string, fields: VisitanteEditableFields): Promise<boolean> {
+  return patchVisitante('PERSONAS', id, fields);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Auditoría — bitácora de acciones administrativas
+   ───────────────────────────────────────────────────────── */
+
+export type AuditoriaAccion =
+  | 'EDITAR'
+  | 'AUTORIZAR'
+  | 'DENEGAR'
+  | 'REVOCAR'
+  | 'RESTAURAR'
+  | 'APROBAR_REGISTRO'
+  | 'RECHAZAR_REGISTRO'
+  | 'CREAR';
+
+export type AuditoriaEntidad = 'PLACA' | 'PERSONA' | 'REGISTRO' | 'ITEM' | 'FINDESEMANA';
+
+export interface AuditoriaEntry {
+  accion: AuditoriaAccion;
+  entidad: AuditoriaEntidad;
+  entidad_id: string;
+  /** Placa o cédula/nombre del visitante afectado — para poder leer la fila sin cruzar tablas. */
+  referencia?: string;
+  /** Resumen legible; si se omite se arma como "ACCION ENTIDAD referencia". */
+  evento?: string;
+  usuario?: string;
+  nombre?: string;
+  cedula?: string;
+  rol?: string;
+  ip?: string;
+  /** Payload libre (antes/después, motivo, etc.) — se serializa a JSON. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  detalle?: Record<string, any>;
+}
+
+/**
+ * Escribe una entrada en la bitácora de auditoría.
+ * Nunca lanza ni bloquea la acción que la origina: si la tabla no está
+ * configurada o Airtable falla, solo se registra el error en el log del servidor.
+ */
+export async function createAuditoria(entry: AuditoriaEntry): Promise<void> {
+  try {
+    const evento = entry.evento
+      ?? [entry.accion, entry.entidad, entry.referencia].filter(Boolean).join(' · ');
+    const body = {
+      records: [{
+        fields: {
+          evento,
+          fecha:      new Date().toISOString(),
+          accion:     entry.accion,
+          entidad:    entry.entidad,
+          entidad_id: entry.entidad_id,
+          ...(entry.referencia ? { referencia: entry.referencia } : {}),
+          ...(entry.usuario    ? { usuario:    entry.usuario    } : {}),
+          ...(entry.nombre     ? { nombre:     entry.nombre     } : {}),
+          ...(entry.cedula     ? { cedula:     entry.cedula     } : {}),
+          ...(entry.rol        ? { rol:        entry.rol        } : {}),
+          ...(entry.ip         ? { ip:         entry.ip         } : {}),
+          detalle: JSON.stringify(entry.detalle ?? {}, null, 2),
+        },
+      }],
+    };
+    const res = await fetchWithRetry(apiUrl(getTable('AUDITORIA')), {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('[createAuditoria] Airtable error', res.status, JSON.stringify(err));
+    }
+  } catch (e) {
+    console.error('[createAuditoria] fallo al registrar auditoría', e);
+  }
+}
+
+export interface AuditoriaRecord {
+  id: string;
+  evento?: string;
+  fecha?: string;
+  usuario?: string;
+  nombre?: string;
+  cedula?: string;
+  rol?: string;
+  accion?: string;
+  entidad?: string;
+  entidad_id?: string;
+  referencia?: string;
+  detalle?: string;
+  ip?: string;
+}
+
+/** Devuelve las entradas de auditoría más recientes primero. */
+export async function getAuditoria(limit = 300): Promise<AuditoriaRecord[]> {
+  const params = new URLSearchParams({
+    'sort[0][field]': 'fecha',
+    'sort[0][direction]': 'desc',
+    maxRecords: String(limit),
+  });
+  const records = await fetchAllRecords(getTable('AUDITORIA'), params);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return records.map((r: any): AuditoriaRecord => ({
+    id:         r.id,
+    evento:     r.fields.evento,
+    fecha:      r.fields.fecha,
+    usuario:    r.fields.usuario,
+    nombre:     r.fields.nombre,
+    cedula:     r.fields.cedula,
+    rol:        r.fields.rol,
+    accion:     r.fields.accion,
+    entidad:    r.fields.entidad,
+    entidad_id: r.fields.entidad_id,
+    referencia: r.fields.referencia,
+    detalle:    r.fields.detalle,
+    ip:         r.fields.ip,
+  }));
 }

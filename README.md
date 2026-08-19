@@ -100,6 +100,26 @@ Programación semanal de personal autorizado para fines de semana. Gestionado ex
 ### ITEMS
 Órdenes de salida de materiales/bienes. Campos incluyen `concepto`, `destino`, `autorizado_por`, `usado`, `fecha_autorizacion`.
 
+### AUDITORIA
+Bitácora de acciones administrativas. Una fila por acción; el detalle completo va en JSON.
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `evento` | text | Resumen legible (`ACCION · ENTIDAD · referencia`) |
+| `fecha` | dateTime | Momento de la acción |
+| `usuario` | text | Usuario que la ejecutó |
+| `nombre` | text | Nombre completo del autor |
+| `cedula` | text | Cédula del autor |
+| `rol` | text | `Invita` \| `Autoriza` \| `Superadmin` \| `Porteria` |
+| `accion` | select | `EDITAR` \| `AUTORIZAR` \| `DENEGAR` \| `REVOCAR` \| `RESTAURAR` \| `APROBAR_REGISTRO` \| `RECHAZAR_REGISTRO` \| `CREAR` |
+| `entidad` | select | `PLACA` \| `PERSONA` \| `REGISTRO` \| `ITEM` \| `FINDESEMANA` |
+| `entidad_id` | text | Record ID de Airtable afectado |
+| `referencia` | text | Placa o nombre/cédula del visitante |
+| `detalle` | long text | JSON con `campos_modificados` y `cambios` (antes/después) |
+| `ip` | text | IP de origen de la request |
+
+La escritura de auditoría nunca bloquea la acción que la origina: si falla, se registra en el log del servidor y la operación continúa.
+
 ---
 
 ## Roles y permisos
@@ -108,7 +128,15 @@ Programación semanal de personal autorizado para fines de semana. Gestionado ex
 |---|---|
 | `Invita` | Puede registrar visitantes; no puede autorizar |
 | `Autoriza` | Registrar + autorizar/denegar placas, personas y registros pendientes |
-| `Superadmin` | Todo lo anterior + Programación Semanal + Órdenes de Salida |
+| `Superadmin` | Todo lo anterior + Programación Semanal + Órdenes de Salida + **editar visitas pendientes** |
+
+Toda acción de autorizar, denegar, revocar, aprobar/rechazar registro y editar queda escrita en la tabla `AUDITORIA`.
+
+### Edición de visitas pendientes (Superadmin)
+
+Desde el panel **Visitantes**, el Superadmin ve un botón **Editar** en cada solicitud cuyo estado siga siendo `PENDIENTE`. El modal permite corregir placa/conductor (vehículos), nombre/cargo (peatones), cédula, vencimiento, área destino, motivo y notas.
+
+El servidor revalida el estado antes de escribir: si la visita ya fue autorizada o rechazada, la edición se rechaza. Solo se envían a Airtable los campos que realmente cambiaron, y el antes/después de cada uno queda en el JSON de auditoría.
 
 ---
 
@@ -154,6 +182,7 @@ AIRTABLE_TABLE_REGISTROS=
 AIRTABLE_TABLE_PERSONAS=
 AIRTABLE_TABLE_FINDE_SEMANA=
 AIRTABLE_TABLE_ITEMS=
+AIRTABLE_TABLE_AUDITORIA=
 
 # Zona horaria (Colombia: -05:00)
 APP_TZ_OFFSET=
