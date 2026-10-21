@@ -4,7 +4,7 @@ Sistema de control de acceso y gestión de visitantes para la Finca Guaicaramo. 
 
 ---
 
-## Stack
+## Stack             
 
 | Capa | Tecnología |
 |---|---|
