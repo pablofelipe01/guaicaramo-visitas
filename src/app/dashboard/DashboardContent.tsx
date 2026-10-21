@@ -2,15 +2,16 @@
 
 import { useState } from 'react';
 import NotificationBell from '@/components/NotificationBell';
-import type { RegistroRecord, PlacaRecord, PersonaRecord, ItemRecord, FinDeSemanaRecord, AdminFullRecord } from '@/lib/airtable';
+import type { RegistroRecord, PlacaRecord, PersonaRecord, ItemRecord, FinDeSemanaRecord, AdminFullRecord, IngresoGerenteRecord } from '@/lib/airtable';
 import RegistrosPanel from './RegistrosPanel';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import VisitantesPanel from './VisitantesPanel';
 import ProgramacionSemanalPanel from './ProgramacionSemanalPanel';
 import OrdenesSalidaPanel from './OrdenesSalidaPanel';
 import ResumenAutorizaPanel from './ResumenAutorizaPanel';
+import GerentesPanel from './GerentesPanel';
 
-type Tab = 'resumen' | 'registros' | 'visitantes' | 'registrar' | 'programacion' | 'ordenes';
+type Tab = 'resumen' | 'registros' | 'visitantes' | 'registrar' | 'programacion' | 'ordenes' | 'gerentes';
 
 interface Props {
   registros: RegistroRecord[];
@@ -22,11 +23,13 @@ interface Props {
   items: ItemRecord[];
   finDeSemana: FinDeSemanaRecord[];
   admins: AdminFullRecord[];
+  ingresosGerentes: IngresoGerenteRecord[];
+  canViewGerentes: boolean;
   highlightId?: string;
   areas?: string[]; // áreas del usuario logueado
 }
 
-export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items, finDeSemana, admins, highlightId, areas = [] }: Props) {
+export default function DashboardContent({ registros, placas, personas, usuario, tipo, stats, items, finDeSemana, admins, ingresosGerentes, canViewGerentes, highlightId, areas = [] }: Props) {
   const isPorteria  = tipo === 'Porteria';
   const isAutoriza  = tipo === 'Autoriza';
   const isSuperadmin = tipo === 'Superadmin';
@@ -81,6 +84,18 @@ export default function DashboardContent({ registros, placas, personas, usuario,
                 {pendientesCount} pendiente{pendientesCount !== 1 ? 's' : ''}
               </span>
             )}
+          </button>
+        )}
+
+        {/* Ingresos de gerentes UEA - solo Superadmin */}
+        {canViewGerentes && (
+          <button
+            type="button"
+            className={`db-tab${tab === 'gerentes' ? ' active' : ''}`}
+            onClick={() => setTab('gerentes')}
+          >
+            Ingresos de gerentes
+            <span className="db-tab-count">{ingresosGerentes.length}</span>
           </button>
         )}
 
@@ -179,6 +194,7 @@ export default function DashboardContent({ registros, placas, personas, usuario,
           highlightId={highlightId}
         />
       )}
+      {tab === 'gerentes' && canViewGerentes && <GerentesPanel ingresos={ingresosGerentes} usuario={usuario} />}
       {tab === 'registrar' && !isPorteria && <RegistrarVisitantePanel />}
       {tab === 'programacion' && tipo === 'Superadmin' && <ProgramacionSemanalPanel />}
       {tab === 'ordenes' && tipo === 'Superadmin' && <OrdenesSalidaPanel items={items} />}

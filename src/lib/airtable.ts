@@ -6,7 +6,11 @@
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 
-function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' | 'FINDE_SEMANA' | 'ITEMS' | 'AUDITORIA'): string {
+type TableName =
+  | 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' | 'FINDE_SEMANA' | 'ITEMS' | 'AUDITORIA'
+  | 'GERENTES' | 'INGRESOS_GERENTES';
+
+function getTable(name: TableName): string {
   const env: Record<string, string | undefined> = {
     ADMINISTRADORES: process.env.AIRTABLE_TABLE_ADMINISTRADORES,
     PLACAS:          process.env.AIRTABLE_TABLE_PLACAS,
@@ -15,6 +19,8 @@ function getTable(name: 'ADMINISTRADORES' | 'PLACAS' | 'REGISTROS' | 'PERSONAS' 
     FINDE_SEMANA:    process.env.AIRTABLE_TABLE_FINDE_SEMANA,
     ITEMS:           process.env.AIRTABLE_TABLE_ITEMS,
     AUDITORIA:       process.env.AIRTABLE_TABLE_AUDITORIA,
+    GERENTES:          process.env.AIRTABLE_TABLE_GERENTES,
+    INGRESOS_GERENTES: process.env.AIRTABLE_TABLE_INGRESOS_GERENTES,
   };
   const val = env[name];
   if (!val) throw new Error(`Falta variable de entorno AIRTABLE_TABLE_${name}`);
@@ -1376,4 +1382,76 @@ export async function getAuditoria(limit = 300): Promise<AuditoriaRecord[]> {
     detalle:    r.fields.detalle,
     ip:         r.fields.ip,
   }));
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Gerentes de Unidades Externas — bitácora de ingresos
+   ───────────────────────────────────────────────────────── */
+
+export interface IngresoGerenteRecord {
+  id: string;
+  gerente_id?: string;
+  nombre: string;
+  cedula: string;
+  uea: string;
+  /** Placas registradas en la ficha del gerente. */
+  placas_gerente?: string;
+  /** Si el gerente está marcado como autorizado en su ficha. */
+  gerente_autorizado: boolean;
+  fecha_hora_ingreso?: string;
+  fecha_hora_salida?: string;
+  area_destino?: string;
+  placa_ingreso?: string;
+  nota_vigilante?: string;
+}
+
+/**
+ * Los campos de IA de Airtable llegan como `{ state, value, isStale }` en vez de
+ * texto plano; devuelve el texto tanto para ese formato como para un campo normal.
+ */
+function aiTextValue(field: unknown): string | undefined {
+  if (field == null) return undefined;
+  if (typeof field === 'string') return field;
+  if (typeof field === 'object' && 'value' in field) {
+    const value = (field as { value?: unknown }).value;
+    return typeof value === 'string' ? value : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Devuelve todos los ingresos de gerentes (más recientes primero), con los
+ * datos del gerente vinculado (nombre, cédula, UEA) ya resueltos.
+ */
+export async function getIngresosGerentes(): Promise<IngresoGerenteRecord[]> {
+  const [ingresos, gerentes] = await Promise.all([
+    fetchAllRecords(getTable('INGRESOS_GERENTES'), new URLSearchParams({
+      'sort[0][field]': 'fecha_hora_ingreso',
+      'sort[0][direction]': 'desc',
+    })),
+    fetchAllRecords(getTable('GERENTES'), new URLSearchParams()),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const gerentesById = new Map<string, any>(gerentes.map((g: any) => [g.id, g.fields]));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ingresos.map((r: any): IngresoGerenteRecord => {
+    const gerenteId: string | undefined = r.fields.Gerente?.[0];
+    const g = gerenteId ? gerentesById.get(gerenteId) ?? {} : {};
+    return {
+      id:                 r.id,
+      gerente_id:         gerenteId,
+      nombre:             g.nombre ?? '',
+      cedula:             g.cedula ?? '',
+      uea:                g.UEA ?? r.fields['UEA (del gerente)']?.[0] ?? '',
+      placas_gerente:     g.placas,
+      gerente_autorizado: g.autorizado === true,
+      fecha_hora_ingreso: r.fields.fecha_hora_ingreso,
+      fecha_hora_salida:  r.fields.fecha_hora_salida,
+      area_destino:       aiTextValue(r.fields.area_destino),
+      placa_ingreso:      r.fields.placa_ingreso,
+      nota_vigilante:     r.fields.nota_vigilante,
+    };
+  });
 }

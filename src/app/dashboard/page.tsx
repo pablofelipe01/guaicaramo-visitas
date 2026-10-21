@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
-import { getRegistros, getPlacas, getPersonas, getItems, getFinDeSemana, getAdminsAll, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord, type FinDeSemanaRecord, type AdminFullRecord } from '@/lib/airtable';
+import { getRegistros, getPlacas, getPersonas, getItems, getFinDeSemana, getAdminsAll, getIngresosGerentes, type RegistroRecord, type PlacaRecord, type PersonaRecord, type ItemRecord, type FinDeSemanaRecord, type AdminFullRecord, type IngresoGerenteRecord } from '@/lib/airtable';
 import RegistrarVisitantePanel from './RegistrarVisitantePanel';
 import DashboardContent from './DashboardContent';
 import { SESSION_COOKIE } from '@/lib/session';
@@ -37,10 +37,13 @@ export default async function DashboardPage({
   const isSuperadmin = tipo === 'Superadmin';
   const isPorteria   = tipo === 'Porteria';
   const canViewDashboard = isAutoriza || isSuperadmin || isPorteria;
+  // Bitácora de gerentes: solo Superadmin
+  const canViewGerentes = isSuperadmin;
 
   // Solo carga datos si el usuario puede ver el dashboard
   let placas: PlacaRecord[] = [], personas: PersonaRecord[] = [], registros: RegistroRecord[] = [], items: ItemRecord[] = [];
   let finDeSemana: FinDeSemanaRecord[] = [], admins: AdminFullRecord[] = [];
+  let ingresosGerentes: IngresoGerenteRecord[] = [];
   if (canViewDashboard) {
     [registros, placas, personas] = await Promise.all([getRegistros(), getPlacas(), getPersonas()]);
 
@@ -49,6 +52,14 @@ export default async function DashboardPage({
         [items, finDeSemana, admins] = await Promise.all([getItems(), getFinDeSemana(), getAdminsAll()]);
       } catch {
         // tables may not be configured yet — panel will show empty lists
+      }
+    }
+
+    if (canViewGerentes) {
+      try {
+        ingresosGerentes = await getIngresosGerentes();
+      } catch {
+        // tablas de gerentes sin configurar — el panel mostrará la lista vacía
       }
     }
 
@@ -134,6 +145,8 @@ export default async function DashboardPage({
             items={items}
             finDeSemana={finDeSemana}
             admins={admins}
+            ingresosGerentes={ingresosGerentes}
+            canViewGerentes={canViewGerentes}
             highlightId={highlightId}
             areas={areas}
           />
